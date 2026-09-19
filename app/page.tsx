@@ -56,6 +56,27 @@ type DigestPayload = {
   source: "openai" | "fallback" | "configuration";
   message?: string;
 };
+type RegisteredEvent = {
+  id: string;
+  title: string;
+  date: string;
+  time: string;
+  location: string;
+  community: string;
+};
+type EventAgentDraft = {
+  headline: string;
+  communityPost: string;
+  emailSubject: string;
+  emailBody: string;
+  inAppMessage: string;
+  scheduleNote: string;
+};
+type EventAgentPayload = {
+  source: "openai" | "fallback" | "configuration";
+  draft: EventAgentDraft;
+  message?: string;
+};
 
 const avatar = (name: string, shade = "violet") => (
   <span className={`avatar ${shade}`}>{name.split(" ").map((word) => word[0]).slice(0, 2).join("")}</span>
@@ -187,6 +208,15 @@ const communityTopics: Record<string, { focus: string; prompt: string; project: 
   "Founders Circle": { focus: "early-stage building", prompt: "What decision would be easier with one honest founder conversation?", project: "A customer-learning board that keeps evidence beside decisions.", resource: "A practical template for weekly founder updates." },
 };
 
+const featuredRegisteredEvent: RegisteredEvent = {
+  id: "ai-agents-workshop",
+  title: "Build your first AI agent",
+  date: "2026-09-21",
+  time: "4:00 PM – 6:00 PM IST",
+  location: "Online · Live workshop",
+  community: "AI Agents",
+};
+
 const communitySeedMessages = (communityName: string, channel: string): Message[] => {
   const topic = communityTopics[communityName] || { focus: "building", prompt: "What are you making this week?", project: "A new community project.", resource: "A useful reference for builders." };
   const base = Array.from(communityName).reduce((sum, character) => sum + character.charCodeAt(0), 0) * 10;
@@ -220,6 +250,22 @@ function PlatformLogo({ className = "" }: { className?: string }) {
   return <img className={`platform-logo ${className}`.trim()} src="/buildcircle-logo.png" alt="BuildCircle logo" />;
 }
 
+function RegisteredEventsCalendar({ events, onOpenEvent }: { events: RegisteredEvent[]; onOpenEvent: () => void }) {
+  const [selectedDate, setSelectedDate] = useState(featuredRegisteredEvent.date);
+  const [activeMonth, setActiveMonth] = useState(featuredRegisteredEvent.date.slice(0, 7));
+  const [year, month] = activeMonth.split("-").map(Number);
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const startsOn = new Date(year, month - 1, 1).getDay();
+  const selectedEvents = events.filter((event) => event.date === selectedDate);
+  const selectDay = (day: number) => {
+    const date = `${activeMonth}-${String(day).padStart(2, "0")}`;
+    setSelectedDate(date);
+  };
+  const monthLabel = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" }).format(new Date(year, month - 1, 1));
+  const dayLabel = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(new Date(`${selectedDate}T12:00:00`));
+  return <section className="registered-calendar" aria-label="Your registered event calendar"><div className="calendar-title"><span><Icon name="calendar" size={14}/><b>Your calendar</b></span><em>{events.length} saved</em></div><p>Registered events and reminders</p><div className="calendar-month"><b>{monthLabel}</b><span>IST</span></div><div className="calendar-weekdays">{"SMTWTFS".split("").map((day, index) => <span key={`${day}-${index}`}>{day}</span>)}</div><div className="calendar-grid">{Array.from({ length: startsOn }, (_, index) => <span className="calendar-empty" key={`blank-${index}`}/>) }{Array.from({ length: daysInMonth }, (_, index) => { const day = index + 1; const date = `${activeMonth}-${String(day).padStart(2, "0")}`; const hasEvent = events.some((event) => event.date === date); return <button key={date} className={`${selectedDate === date ? "selected" : ""} ${hasEvent ? "has-event" : ""}`} aria-pressed={selectedDate === date} onClick={() => selectDay(day)}>{day}</button>; })}</div><div className="calendar-agenda"><span>{dayLabel}</span>{selectedEvents.length ? selectedEvents.map((event) => <button key={event.id} onClick={onOpenEvent}><i/><div><b>{event.title}</b><small>{event.time}</small></div><Icon name="chevron" size={13}/></button>) : <p>{events.length ? "No registered events on this day." : "Register for an event to add it here."}</p>}</div>{events.length > 0 && <div className="calendar-reminder"><Icon name="bell" size={13}/><span>24-hour and 1-hour reminders are scheduled.</span></div>}</section>;
+}
+
 export default function BuildCircle() {
   const [page, setPage] = useState<Page>("home");
   const [modal, setModal] = useState<Modal>(null);
@@ -232,6 +278,7 @@ export default function BuildCircle() {
   const [attachedAudio, setAttachedAudio] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [registered, setRegistered] = useState(false);
+  const [registeredEvents, setRegisteredEvents] = useState<RegisteredEvent[]>([]);
   const [checkedIn, setCheckedIn] = useState(false);
   const [eventMoved, setEventMoved] = useState(false);
   const [activeCommunityName, setActiveCommunityName] = useState("AI Agents");
@@ -246,6 +293,12 @@ export default function BuildCircle() {
   const notify = (text: string) => {
     setToast(text);
     window.setTimeout(() => setToast(""), 2800);
+  };
+  const registerForFeaturedEvent = () => {
+    setRegistered(true);
+    setRegisteredEvents((events) => events.some((event) => event.id === featuredRegisteredEvent.id) ? events : [...events, featuredRegisteredEvent]);
+    setModal("pass");
+    notify("Registration confirmed — your calendar and reminders are ready");
   };
 
   const addMessage = (event: FormEvent) => {
@@ -294,6 +347,7 @@ export default function BuildCircle() {
           <NavItem label="Events" icon="calendar" active={page === "events"} onClick={() => switchPage("events")} />
           <NavItem label="Notifications" icon="bell" active={page === "notifications"} count="3" onClick={() => switchPage("notifications")} />
         </nav>
+        <RegisteredEventsCalendar events={registeredEvents} onOpenEvent={() => switchPage("events")} />
         <div className="sidebar-spacer" />
         <button className="create-button" onClick={() => setModal("create")}><Icon name="plus" size={17}/> Create</button>
         <button className="account-block" onClick={() => switchPage("profile")}>{avatar("Arjun Nair", "violet")}<span><b>Arjun Nair</b><small>Builder profile</small></span><Icon name="chevron" size={16}/></button>
@@ -320,7 +374,7 @@ export default function BuildCircle() {
         <NavItem label="Profile" icon="user" active={page === "profile"} onClick={() => switchPage("profile")} />
       </nav>
 
-      {modal && <ModalLayer type={modal} close={() => setModal(null)} registered={registered} checkedIn={checkedIn} eventMoved={eventMoved} onNavigate={(target) => { switchPage(target); setModal(null); }} onRegister={() => { setRegistered(true); setModal("pass"); notify("Registration confirmed — your QR pass is ready"); }} onCheckin={() => { setCheckedIn(true); notify("Attendee checked in successfully"); }} onMove={() => { setEventMoved(true); setModal("impact"); }} onShowcase={(project) => { setChannelMessages((current) => ({ ...current, [`${activeCommunityName}:projects`]: [...(current[`${activeCommunityName}:projects`] || []), { id: Date.now(), user: "Arjun Nair", initials: "AN", shade: "violet", time: "Just now", body: project.description, tag: "Showcase", replies: 0, reactions: 0, accepted: false, project: true, image: project.image }] })); setChannel("projects"); setModal(null); setPage("community"); notify("Your project showcase was published"); }} onCreate={createCommunity} />}
+      {modal && <ModalLayer type={modal} close={() => setModal(null)} registered={registered} checkedIn={checkedIn} eventMoved={eventMoved} onNavigate={(target) => { switchPage(target); setModal(null); }} onRegister={registerForFeaturedEvent} onCheckin={() => { setCheckedIn(true); notify("Attendee checked in successfully"); }} onMove={() => { setEventMoved(true); setModal("impact"); }} onShowcase={(project) => { setChannelMessages((current) => ({ ...current, [`${activeCommunityName}:projects`]: [...(current[`${activeCommunityName}:projects`] || []), { id: Date.now(), user: "Arjun Nair", initials: "AN", shade: "violet", time: "Just now", body: project.description, tag: "Showcase", replies: 0, reactions: 0, accepted: false, project: true, image: project.image }] })); setChannel("projects"); setModal(null); setPage("community"); notify("Your project showcase was published"); }} onCreate={createCommunity} />}
       {toast && <div className="toast"><Icon name="check" size={16}/>{toast}</div>}
     </main>
   );
@@ -392,6 +446,7 @@ function CommunityView({ communityName, channel, setChannel, channelMessages, se
   const [channelEditorOpen, setChannelEditorOpen] = useState(false);
   const [newChannelName, setNewChannelName] = useState("");
   const [customChannels, setCustomChannels] = useState<Record<string, Array<[string, string]>>>({});
+  const [announcementBotEnabled, setAnnouncementBotEnabled] = useState(true);
   const [activeChat, setActiveChat] = useState("Maya Chen");
   const [chatDraft, setChatDraft] = useState("");
   const [directMessages, setDirectMessages] = useState<Record<string, string[]>>({ "Maya Chen": ["Hey! Are you joining the builder room later?"], "Ishaan Rao": ["I added the health-check notes to the resource thread."], "Alina Brooks": ["Would love your eyes on the TraceView flow when you have a minute."] });
@@ -409,17 +464,22 @@ function CommunityView({ communityName, channel, setChannel, channelMessages, se
   const baseLinks: Array<[string, string]> = [["general", "General"], ["help", "Help"], ["projects", "Projects"], ["resources", "Resources"]];
   const links = [...baseLinks, ...(customChannels[communityName] || [])];
   const customChannel = (customChannels[communityName] || []).find(([id]) => id === channel);
-  const details = channelDetails[channel] || {
+  const baseDetails = channelDetails[channel] || {
     title: customChannel?.[1] || "General",
     description: customChannel ? "A member discussion room for focused collaboration." : channelDetails.general.description,
+    welcome: `Welcome to #${customChannel?.[1] || "General"}`,
+    welcomeCopy: "Bring a useful question, a work in progress, or a practical lesson for the room.",
+    placeholder: `Start a conversation in #${customChannel?.[1] || "General"}`,
     readOnly: false,
   };
+  const isAnnouncement = Boolean(baseDetails.readOnly);
+  const actorRole = communityName === "Open Source Kerala" ? "Moderator" : communityName === "AI Agents" ? "Admin" : "Member";
+  const canPostAnnouncements = actorRole === "Admin" || actorRole === "Moderator";
+  const details = isAnnouncement ? { ...baseDetails, description: `Official updates from the ${communityName} team.`, welcome: `Welcome to #Announcements`, welcomeCopy: `Only ${communityName} admins and moderators can post here, so every update stays useful and trustworthy.` } : baseDetails;
   const scopedChannel = `${communityName}:${channel}`;
   const messages = channelMessages[scopedChannel] || communitySeedMessages(communityName, channel);
   const selected = messages.find((message) => message.id === thread);
-  const selectedReplies = thread ? threadReplies[thread] || [] : [];
-  const isAnnouncement = details.readOnly;
-  const switchChannel = (next: string) => { setChannel(next); setThread(null); setThreadDraft(""); setDraft(""); setAttached(null); };
+  const selectedReplies = thread ? threadReplies[thread] || [] : [];  const switchChannel = (next: string) => { setChannel(next); setThread(null); setThreadDraft(""); setDraft(""); setAttached(null); };
   const react = (id: number) => {
     const alreadyLoved = likedMessages.includes(id);
     setLikedMessages((items) => alreadyLoved ? items.filter((item) => item !== id) : [...items, id]);
@@ -474,16 +534,57 @@ function CommunityView({ communityName, channel, setChannel, channelMessages, se
   const directContacts = [["Maya Chen", "orange", "Online now"], ["Ishaan Rao", "teal", "Active 12m ago"], ["Alina Brooks", "pink", "Online now"]] as const;
 
   const createChannel = (event: FormEvent) => { event.preventDefault(); const label = newChannelName.trim(); if (!label) return; const id = label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || `room-${Date.now()}`; setCustomChannels((current) => ({ ...current, [communityName]: [...(current[communityName] || []), [id, label]] })); setNewChannelName(""); setChannel(id); setChannelEditorOpen(false); };
+  const publishAnnouncement = (body: string) => {
+    const message = body.trim();
+    if (!canPostAnnouncements || !message) return;
+    const announcementKey = `${communityName}:announcements`;
+    setChannelMessages((current) => ({ ...current, [announcementKey]: [...(current[announcementKey] || communitySeedMessages(communityName, "announcements")), { id: Date.now(), user: "Arjun Nair", initials: "AN", shade: "violet", time: "Just now", body: message, tag: "Announcement", replies: 0, reactions: 0, accepted: false }] }));
+  };
 
   return <div className="community-layout">
-    <aside className="channel-sidebar"><div className="community-head"><MiniLogo color={communities.find((community) => community.name === communityName)?.color || "teal"}/><div><b>{communityName}</b><small>8,432 members</small></div></div><div className="circle-picker"><button className={`circle-picker-trigger ${showCirclePicker ? "open" : ""}`} onClick={() => setShowCirclePicker((open) => !open)} aria-expanded={showCirclePicker} aria-controls="circle-picker-menu"><span className="circle-logo-stack">{communities.filter((community) => community.access === "public").slice(0, 3).map((community) => <MiniLogo color={community.color} key={community.name}/>)}</span><span>Switch circle</span><Icon name="chevron" size={14}/></button>{showCirclePicker && <div className="circle-picker-menu" id="circle-picker-menu" role="menu"><div className="circle-picker-title"><span>Your communities</span><button onClick={() => setShowCirclePicker(false)} aria-label="Close community switcher"><Icon name="close" size={14}/></button></div>{communities.filter((community) => community.access === "public" || community.name === communityName).map((community) => <button key={community.name} role="menuitem" className={community.name === communityName ? "current" : ""} onClick={() => { onSwitchCommunity(community.name); setShowCirclePicker(false); }}><MiniLogo color={community.color}/><span><b>{community.name}</b><small>{community.members} members</small></span>{community.name === communityName ? <Icon name="check" size={15}/> : <Icon name="chevron" size={15}/>}</button>)}<button className="circle-picker-browse" onClick={() => { setShowCirclePicker(false); onBrowseCommunities(); }}><Icon name="compass" size={15}/> Explore all communities</button></div>}</div><button className="community-admin-button" onClick={() => setShowAdminControls((open) => !open)} aria-expanded={showAdminControls}><Icon name="more" size={14}/><span>Manage community</span><Icon name="chevron" size={13}/></button>{showAdminControls && <div className="community-admin-panel"><p>ADMIN CONTROLS</p><button onClick={() => setApprovalOnly((value) => !value)}><span><b>Join requests</b><small>{approvalOnly ? "Admin approval required" : "Anyone can join"}</small></span><i className={approvalOnly ? "on" : ""}/></button><button onClick={() => setFilesEnabled((value) => !value)}><span><b>File sharing</b><small>{filesEnabled ? "Members can share files" : "Files are restricted"}</small></span><i className={filesEnabled ? "on" : ""}/></button><button onClick={() => setChannel("announcements")}><span><b>Manage announcements</b><small>Post updates in a read-only room</small></span><Icon name="arrow" size={14}/></button><button onClick={() => setChannelEditorOpen((open) => !open)}><span><b>Create or edit channels</b><small>Configure your starter rooms</small></span><Icon name="hash" size={14}/></button>{channelEditorOpen && <form className="channel-editor" onSubmit={createChannel}><label>NEW CHANNEL<input value={newChannelName} onChange={(event) => setNewChannelName(event.target.value)} placeholder="e.g. design-feedback"/></label><button type="submit"><Icon name="plus" size={14}/> Add channel</button><small>Announcements stay admin-only. New channels are open for member discussion.</small></form>}</div>}<button className="community-switcher" onClick={onMembership} aria-label={`Browse ${communityName} members`}><Icon name="people" size={13}/><span>Members</span><Icon name="chevron" size={14}/></button><div className="channel-group"><p>CHANNELS</p>{links.map(([id, label]) => <button className={`channel-link ${channel === id ? "selected" : ""}`} key={id} onClick={() => switchChannel(id)}><Icon name="hash" size={16}/>{label}{id === "help" && <em>4</em>}</button>)}<button className={`channel-link ${channel === "announcements" ? "selected" : ""}`} onClick={() => switchChannel("announcements")}><Icon name="pin" size={15}/>Announcements</button></div><div className="community-mini-event"><p>UPCOMING IN {communityName.toUpperCase()}</p><b>Build your first AI agent</b><small>Sat · 4:00 PM</small></div></aside>
+    <aside className="channel-sidebar"><div className="community-head"><MiniLogo color={communities.find((community) => community.name === communityName)?.color || "teal"}/><div><b>{communityName}</b><small>8,432 members</small></div></div><div className="circle-picker"><button className={`circle-picker-trigger ${showCirclePicker ? "open" : ""}`} onClick={() => setShowCirclePicker((open) => !open)} aria-expanded={showCirclePicker} aria-controls="circle-picker-menu"><span className="circle-logo-stack">{communities.filter((community) => community.access === "public").slice(0, 3).map((community) => <MiniLogo color={community.color} key={community.name}/>)}</span><span>Switch circle</span><Icon name="chevron" size={14}/></button>{showCirclePicker && <div className="circle-picker-menu" id="circle-picker-menu" role="menu"><div className="circle-picker-title"><span>Your communities</span><button onClick={() => setShowCirclePicker(false)} aria-label="Close community switcher"><Icon name="close" size={14}/></button></div>{communities.filter((community) => community.access === "public" || community.name === communityName).map((community) => <button key={community.name} role="menuitem" className={community.name === communityName ? "current" : ""} onClick={() => { onSwitchCommunity(community.name); setShowCirclePicker(false); }}><MiniLogo color={community.color}/><span><b>{community.name}</b><small>{community.members} members</small></span>{community.name === communityName ? <Icon name="check" size={15}/> : <Icon name="chevron" size={15}/>}</button>)}<button className="circle-picker-browse" onClick={() => { setShowCirclePicker(false); onBrowseCommunities(); }}><Icon name="compass" size={15}/> Explore all communities</button></div>}</div><button className="community-admin-button" onClick={() => setShowAdminControls((open) => !open)} aria-expanded={showAdminControls}><Icon name="more" size={14}/><span>Manage community</span><Icon name="chevron" size={13}/></button>{showAdminControls && <div className="community-admin-panel"><p>ADMIN CONTROLS</p><button onClick={() => setApprovalOnly((value) => !value)}><span><b>Join requests</b><small>{approvalOnly ? "Admin approval required" : "Anyone can join"}</small></span><i className={approvalOnly ? "on" : ""}/></button><button onClick={() => setFilesEnabled((value) => !value)}><span><b>File sharing</b><small>{filesEnabled ? "Members can share files" : "Files are restricted"}</small></span><i className={filesEnabled ? "on" : ""}/></button><button onClick={() => setChannel("announcements")}><span><b>Manage announcements</b><small>Post updates in a read-only room</small></span><Icon name="arrow" size={14}/></button><button onClick={() => setChannelEditorOpen((open) => !open)}><span><b>Create or edit channels</b><small>Configure your starter rooms</small></span><Icon name="hash" size={14}/></button>{channelEditorOpen && <form className="channel-editor" onSubmit={createChannel}><label>NEW CHANNEL<input value={newChannelName} onChange={(event) => setNewChannelName(event.target.value)} placeholder="e.g. design-feedback"/></label><button type="submit"><Icon name="plus" size={14}/> Add channel</button><small>Announcements stay admin-only. New channels are open for member discussion.</small></form>}{communityName === "Open Source Kerala" && <button onClick={() => setAnnouncementBotEnabled((enabled) => !enabled)}><span><b>Announcement bot</b><small>{announcementBotEnabled ? "Agent drafts follow the moderator policy" : "Disabled for this community"}</small></span><i className={announcementBotEnabled ? "on" : ""}/></button>}</div>}<button className="community-switcher" onClick={onMembership} aria-label={`Browse ${communityName} members`}><Icon name="people" size={13}/><span>Members</span><Icon name="chevron" size={14}/></button><div className="channel-group"><p>CHANNELS</p>{links.map(([id, label]) => <button className={`channel-link ${channel === id ? "selected" : ""}`} key={id} onClick={() => switchChannel(id)}><Icon name="hash" size={16}/>{label}{id === "help" && <em>4</em>}</button>)}<button className={`channel-link ${channel === "announcements" ? "selected" : ""}`} onClick={() => switchChannel("announcements")}><Icon name="pin" size={15}/>Announcements</button></div><div className="community-mini-event"><p>UPCOMING IN {communityName.toUpperCase()}</p><b>Build your first AI agent</b><small>Sat · 4:00 PM</small></div></aside>
     <section className="channel-main"><header className="channel-head"><div><h2><Icon name={isAnnouncement ? "pin" : "hash"} size={21}/>{details.title}</h2><p>{details.description}</p></div><div className="community-utilities"><button className={`workspace-action ${workspacePanel === "messages" ? "active" : ""}`} onClick={() => setWorkspacePanel((panel) => panel === "messages" ? "none" : "messages")} aria-pressed={workspacePanel === "messages"}><Icon name="reply" size={16}/> Messages</button><button className={`workspace-action ${liveRoom ? "live" : ""}`} onClick={() => { if (!liveRoom) { setLiveRoom(true); setRoomJoined(true); } else setRoomJoined((joined) => !joined); }} aria-pressed={roomJoined}><i/>{liveRoom ? roomJoined ? "Leave room" : "Join room" : "Start room"}</button><div className="channel-members">{avatar("Maya", "orange")}{avatar("Ishaan", "teal")}{avatar("Alina", "pink")}<span>8.4k</span></div><span className="token-balance" title="BuildTokens earned from useful participation">◈ {buildTokens}</span></div></header>
       {liveRoom && <div className="live-room-banner"><span><i/> Live builder room</span><p>{roomJoined ? "You are in with Maya, Ishaan and Alina." : "Maya, Ishaan and Alina are in this room."}</p><div className="room-presence">{avatar("Maya", "orange")}{avatar("Ishaan", "teal")}{avatar("Alina", "pink")}<button onClick={() => setRoomJoined((joined) => !joined)}>{roomJoined ? "Leave room" : "Join room"}</button></div></div>}
       <div className="message-list"><div className="date-divider"><span>Today</span></div><div className="channel-welcome"><MiniLogo color="teal"/><h3>{details.welcome}</h3><p>{details.welcomeCopy}</p>{isAnnouncement && <span className="announcement-lock"><Icon name="lock" size={12}/> Read-only for members</span>}</div>{messages.filter((message) => !hiddenMessages.includes(message.id)).map((message) => <article className="message" key={message.id}><div className="message-avatar">{avatar(message.user, message.shade)}</div><div className="message-body"><div className="message-meta"><b>{message.user}</b><span>{message.time}</span>{message.tag === "Question" && <i className="message-kind question">Question</i>}{message.tag === "Showcase" && <i className="message-kind showcase">Showcase</i>}{message.tag === "Announcement" && <i className="message-kind announcement">Announcement</i>}</div><p>{message.body}</p>{message.image && <img className="message-image" src={message.image} alt="Shared image" />}{message.audio && <VoiceNote src={message.audio}/>}{message.fileName && message.fileUrl && <a className="shared-file" href={message.fileUrl} target="_blank" rel="noreferrer"><Icon name="file" size={17}/><span><b>{message.fileName}</b><small>Open shared file</small></span><Icon name="arrow" size={14}/></a>}{message.project && <div className="inline-project"><span className="inline-project-icon">⌘</span><div><b>{message.id === 202 ? "Evidence trail" : "TraceView"}</b><small>{message.id === 202 ? "Research assistant for teams" : "Visual debugger for agent runs"}</small></div></div>}{message.accepted && <div className="accepted"><Icon name="check" size={15}/> Accepted answer</div>}<div className="message-actions"><button className={likedMessages.includes(message.id) ? "loved" : ""} onClick={() => react(message.id)} aria-pressed={likedMessages.includes(message.id)}><Icon name="heart" size={15}/>{message.reactions || "Love"}</button>{!isAnnouncement && <button onClick={() => openThread(message.id)}><Icon name="reply" size={15}/>{(threadReplies[message.id] || []).length ? `${(threadReplies[message.id] || []).length} ${(threadReplies[message.id] || []).length === 1 ? "reply" : "replies"}` : "Reply"}</button>}<span className="message-menu"><button aria-label="Message actions" onClick={() => setMessageMenu((open) => open === message.id ? null : message.id)}><Icon name="more" size={16}/></button>{messageMenu === message.id && <div className="message-menu-panel" role="menu"><button role="menuitem" onClick={() => deleteForMe(message.id)}>Delete for me</button>{message.user === "Arjun Nair" && <button role="menuitem" className="danger" onClick={() => deleteForEveryone(message.id)}>Delete for everyone</button>}</div>}</span></div></div></article>)}</div>
-      {isAnnouncement ? <div className="read-only-composer"><Icon name="lock" size={16}/><span>Only {communityName} admins and moderators can post announcements.</span></div> : <form className="composer" onSubmit={onSubmit}>{(attached || attachedAudio) && <div className="attachment-preview">{attachedAudio ? <audio controls src={attachedAudio}>Voice message ready</audio> : attachmentName ? <div className="pending-file"><Icon name="file" size={17}/><span>{attachmentName}</span></div> : <img src={attached || ""} alt="Pending image upload"/>}<button type="button" onClick={() => { setAttached(null); setAttachmentName(""); setAttachedAudio(null); }} aria-label="Remove attachment"><Icon name="close" size={13}/></button></div>}{voiceError && <p className="voice-error">{voiceError}</p>}<input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={recording ? "Recording voice message…" : details.placeholder} disabled={recording}/><div className="composer-tools"><label className="tool-button" title="Share image or file"><Icon name="paperclip" size={18}/><input type="file" accept="image/*,.pdf,.doc,.docx,.ppt,.pptx,.zip,.txt" onChange={chooseFile}/></label><button type="button" className={`tool-button voice-button ${recording ? "recording" : ""}`} onClick={recording ? stopRecording : startRecording} title={recording ? "Stop recording" : "Record voice message"}>{recording ? <Icon name="close" size={17}/> : <span className="voice-glyph">●</span>}<span>{recording ? "Stop" : "Voice"}</span></button>{channel === "projects" && <button type="button" className="tool-button" onClick={onShowcase}><Icon name="sparkle" size={17}/><span>Showcase</span></button>}<button className="send-button" type="submit" aria-label="Send message"><Icon name="send" size={17}/></button></div></form>}</section>
+      {isAnnouncement ? <AnnouncementComposer communityName={communityName} actorRole={actorRole} botEnabled={announcementBotEnabled} onPublish={publishAnnouncement}/> : <form className="composer" onSubmit={onSubmit}>{(attached || attachedAudio) && <div className="attachment-preview">{attachedAudio ? <audio controls src={attachedAudio}>Voice message ready</audio> : attachmentName ? <div className="pending-file"><Icon name="file" size={17}/><span>{attachmentName}</span></div> : <img src={attached || ""} alt="Pending image upload"/>}<button type="button" onClick={() => { setAttached(null); setAttachmentName(""); setAttachedAudio(null); }} aria-label="Remove attachment"><Icon name="close" size={13}/></button></div>}{voiceError && <p className="voice-error">{voiceError}</p>}<input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={recording ? "Recording voice message…" : details.placeholder} disabled={recording}/><div className="composer-tools"><label className="tool-button" title="Share image or file"><Icon name="paperclip" size={18}/><input type="file" accept="image/*,.pdf,.doc,.docx,.ppt,.pptx,.zip,.txt" onChange={chooseFile}/></label><button type="button" className={`tool-button voice-button ${recording ? "recording" : ""}`} onClick={recording ? stopRecording : startRecording} title={recording ? "Stop recording" : "Record voice message"}>{recording ? <Icon name="close" size={17}/> : <span className="voice-glyph">●</span>}<span>{recording ? "Stop" : "Voice"}</span></button>{channel === "projects" && <button type="button" className="tool-button" onClick={onShowcase}><Icon name="sparkle" size={17}/><span>Showcase</span></button>}<button className="send-button" type="submit" aria-label="Send message"><Icon name="send" size={17}/></button></div></form>}</section>
     {thread && selected && <aside className="thread-panel"><header><button onClick={() => setThread(null)}><Icon name="close" size={18}/></button><div><b>Thread</b><small>#{channel}</small></div></header><div className="thread-root"><b>{selected.user}</b><p>{selected.body}</p></div><div className="thread-count">{selectedReplies.length} {selectedReplies.length === 1 ? "reply" : "replies"}</div>{selectedReplies.length ? selectedReplies.map((reply) => <div className="thread-reply" key={reply.id}>{avatar(reply.user, reply.shade)}<div><b>{reply.user}</b><p>{reply.body}</p><small>{reply.time}</small></div></div>) : <p className="empty-thread">No replies yet. Be the first to add a useful thought.</p>}<form className="thread-composer" onSubmit={sendThreadReply}><input value={threadDraft} onChange={(event) => setThreadDraft(event.target.value)} placeholder={`Reply to ${selected.user}`}/><button type="submit" aria-label="Send thread reply"><Icon name="send" size={16}/></button></form></aside>}
     {!thread && workspacePanel === "messages" && <aside className="direct-panel"><header><button onClick={() => setWorkspacePanel("none")} aria-label="Close direct messages"><Icon name="close" size={18}/></button><div><b>Messages</b><small>Private conversations</small></div></header><div className="direct-contact-list">{directContacts.map(([name, shade, status]) => <button className={activeChat === name ? "active" : ""} key={name} onClick={() => setActiveChat(name)}>{avatar(name, shade)}<span><b>{name}</b><small>{status}</small></span><i/></button>)}</div><div className="direct-conversation"><p>Private and only visible to this conversation.</p>{(directMessages[activeChat] || []).map((message, index) => <div className={message.startsWith("You:") ? "from-you" : ""} key={`${message}-${index}`}><b>{message.startsWith("You:") ? "You" : activeChat}</b><span>{message.replace(/^You: /, "")}</span></div>)}</div><form className="direct-composer" onSubmit={sendDirectMessage}><input value={chatDraft} onChange={(event) => setChatDraft(event.target.value)} placeholder={`Message ${activeChat}`}/><button type="submit" aria-label="Send direct message"><Icon name="send" size={16}/></button></form></aside>}
-  </div>;
+  </div>;}
+
+function AnnouncementComposer({ communityName, actorRole, botEnabled, onPublish }: { communityName: string; actorRole: "Admin" | "Moderator" | "Member"; botEnabled: boolean; onPublish: (body: string) => void }) {
+  const [draft, setDraft] = useState("");
+  const [status, setStatus] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const canPost = actorRole === "Admin" || actorRole === "Moderator";
+  const generateDraft = async () => {
+    if (!botEnabled || generating) return;
+    setGenerating(true);
+    setStatus("The announcement bot is checking the policy and drafting your update…");
+    try {
+      const response = await fetch("/api/event-agent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ task: "announcement", context: { title: "Open source community update", date: "This week", time: "Community announcement", location: "BuildCircle", audienceCount: 6100, community: communityName, purpose: draft.trim() || "Share a concise, useful update for contributors and maintainers.", actorRole } }),
+      });
+      if (!response.ok) throw new Error("Announcement agent request failed");
+      const payload = await response.json() as EventAgentPayload;
+      setDraft(payload.draft.communityPost);
+      setStatus(payload.message || "Draft ready for moderator review.");
+    } catch {
+      setStatus("The bot could not draft an update right now. You can still write and post one manually.");
+    } finally {
+      setGenerating(false);
+    }
+  };
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    if (!draft.trim()) return;
+    onPublish(draft);
+    setDraft("");
+    setStatus("Announcement posted by a verified moderator.");
+  };
+  if (!canPost) return <div className="read-only-composer"><Icon name="lock" size={16}/><span>Only {communityName} admins and moderators can post announcements.</span></div>;
+  return <form className="announcement-composer" onSubmit={submit}><div className="announcement-composer-head"><span><Icon name="lock" size={14}/>{actorRole} composer</span><small>Only admins and moderators can publish</small>{botEnabled && <button type="button" onClick={generateDraft} disabled={generating}><Icon name="wand" size={15}/>{generating ? "Drafting…" : "Draft with bot"}</button>}</div><textarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={`Write an official update for ${communityName}`}/><div className="announcement-composer-actions"><small>{status || (botEnabled ? "The bot drafts; a moderator always reviews and posts." : "Bot drafting is disabled for this community.")}</small><button className="dark-button" type="submit" disabled={!draft.trim()}>Post announcement <Icon name="send" size={15}/></button></div></form>;
 }
 
 function ExploreView({ joined, onJoin, onOpen, onCreate }: { joined: string[]; onJoin: (name: string) => void; onOpen: (name: string) => void; onCreate: () => void }) {
@@ -658,10 +759,29 @@ function DigestModal({ close, onNavigate }: { close: () => void; onNavigate: (ta
 }
 
 function ImpactModal({ eventMoved, onMove, close }: { eventMoved: boolean; onMove: () => void; close: () => void }) {
-  const [channel, setChannel] = useState("announcement");
-  const [sent, setSent] = useState(false);
-  const generate = () => { if (!eventMoved) onMove(); };
-  return <div className="impact-modal"><div className="impact-top"><span className="impact-icon"><Icon name="sparkle" size={20}/></span><div><p className="eyebrow">EVENT IMPACT AGENT</p><h2>{eventMoved ? "Your change has a ripple." : "Plan your event communication."}</h2><p>{eventMoved ? "We mapped everyone who needs to know and prepared a clear update for you." : "Generate event messaging with one review step before anything goes out."}</p></div></div>{eventMoved ? <><div className="impact-count"><b>87</b><div><b>registered attendees affected</b><p>They registered for 4:00 PM. The workshop now begins at 5:00 PM.</p></div><span>● Ready to review</span></div><div className="impact-tabs"><button className={channel === "announcement" ? "active" : ""} onClick={() => setChannel("announcement")}>Community announcement</button><button className={channel === "email" ? "active" : ""} onClick={() => setChannel("email")}>Email update</button><button className={channel === "whatsapp" ? "active" : ""} onClick={() => setChannel("whatsapp")}>WhatsApp-ready</button></div><div className="draft-card"><div className="draft-head"><span>AI DRAFT · REVIEW BEFORE SENDING</span><button><Icon name="wand" size={15}/> Refine tone</button></div>{channel === "announcement" ? <><h3>Small timing update for Saturday’s AI agent workshop</h3><p>We’ve moved <b>Build your first AI agent</b> from <b>4:00 PM to 5:00 PM IST</b> this Saturday, September 21.</p><p>Everything else stays the same — it’s still a live, hands-on online workshop, and we can’t wait to build with you. Your registration is confirmed.</p><p>See you at 5!</p></> : channel === "email" ? <><h3>Your workshop start time has changed</h3><p>Hi there — a quick note that Saturday’s Build your first AI agent workshop will now start at <b>5:00 PM IST</b>, one hour later than planned.</p><p>Your spot remains confirmed. We hope the new time makes it even easier to join us.</p></> : <><h3>⚡ Workshop time update</h3><p>Build your first AI agent now starts at <b>5 PM IST</b> this Saturday (instead of 4 PM). Your registration is still confirmed — see you there!</p></>}</div><div className="impact-actions">{sent ? <span className="sent-confirm"><Icon name="check" size={16}/> Update sent to 87 attendees</span> : <button className="dark-button" onClick={() => setSent(true)}>Send to 87 attendees <Icon name="send" size={15}/></button>}<button className="outline-button" onClick={close}>Save as draft</button></div></> : <><div className="agent-options"><button onClick={generate}><Icon name="calendar" size={18}/><div><b>Communicate a change</b><small>Tell attendees about a time, venue or agenda update.</small></div><Icon name="arrow" size={17}/></button><button><Icon name="wand" size={18}/><div><b>Promote this event</b><small>Create a launch post, reminder or social caption.</small></div><Icon name="arrow" size={17}/></button></div></>}</div>;
+  const [channel, setChannel] = useState<"announcement" | "email" | "inapp">("announcement");
+  const [draft, setDraft] = useState<EventAgentPayload | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [queued, setQueued] = useState(false);
+  const [error, setError] = useState("");
+  const eventTime = eventMoved ? "5:00 PM IST" : "4:00 PM IST";
+  const purpose = eventMoved ? "The workshop start time changed from 4:00 PM to 5:00 PM IST. Explain that registrations remain confirmed." : "Prepare a friendly registration confirmation and reminder sequence for every registered attendee.";
+  const generate = async () => {
+    if (loading) return;
+    setLoading(true); setError(""); setQueued(false);
+    try {
+      const response = await fetch("/api/event-agent", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ task: "event-campaign", context: { title: "Build your first AI agent", date: "Saturday, September 21", time: eventTime, location: "Online · Live workshop", audienceCount: eventMoved ? 87 : 327, community: "AI Agents", purpose, actorRole: "Admin" } }) });
+      if (!response.ok) throw new Error("Event Operations Agent request failed");
+      const payload = await response.json() as EventAgentPayload;
+      setDraft(payload);
+    } catch {
+      setError("The agent could not prepare a kit right now. Check your connection and try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+  const preview = draft ? channel === "announcement" ? { title: draft.draft.headline, body: draft.draft.communityPost } : channel === "email" ? { title: draft.draft.emailSubject, body: draft.draft.emailBody } : { title: "BuildCircle event update", body: draft.draft.inAppMessage } : null;
+  return <div className="impact-modal"><div className="impact-top"><span className="impact-icon"><Icon name="sparkle" size={20}/></span><div><p className="eyebrow">EVENT OPERATIONS AGENT</p><h2>{eventMoved ? "Your change has a clear plan." : "Prepare your attendee journey."}</h2><p>The agent checks the event context, writes aligned channel drafts, and keeps every delivery behind your review.</p></div></div><div className="agent-workflow"><span><b>1</b>Audience context</span><span><b>2</b>Cross-channel drafts</span><span><b>3</b>Human approval</span></div>{eventMoved && <div className="impact-count"><b>87</b><div><b>registered attendees affected</b><p>The workshop now begins at 5:00 PM IST. Registrations remain confirmed.</p></div><span>● Needs review</span></div>}{!draft ? <div className="agent-start"><span className="impact-icon"><Icon name="wand" size={19}/></span><div><b>{eventMoved ? "Create the schedule-change kit" : "Create a confirmation and reminder kit"}</b><p>The agent produces a community announcement, email, and in-app notification from the same verified event details.</p></div><button className="dark-button" onClick={generate} disabled={loading}>{loading ? "Preparing…" : "Generate with AI"} <Icon name="arrow" size={15}/></button>{!eventMoved && <button className="outline-button" onClick={onMove}>Simulate timing change</button>}{error && <small className="agent-error">{error}</small>}</div> : <><p className="agent-source"><Icon name="sparkle" size={14}/>{draft.message || "Draft kit ready for review."}</p><div className="impact-tabs"><button className={channel === "announcement" ? "active" : ""} onClick={() => setChannel("announcement")}>Community announcement</button><button className={channel === "email" ? "active" : ""} onClick={() => setChannel("email")}>Email update</button><button className={channel === "inapp" ? "active" : ""} onClick={() => setChannel("inapp")}>In-app message</button></div><div className="draft-card"><div className="draft-head"><span>{draft.source === "openai" ? "AI DRAFT · REVIEW REQUIRED" : "SAFE DRAFT · REVIEW REQUIRED"}</span><button onClick={generate} disabled={loading}><Icon name="wand" size={15}/> {loading ? "Refreshing…" : "Regenerate"}</button></div><h3>{preview?.title}</h3><p>{preview?.body}</p><small>{draft.draft.scheduleNote}</small></div><div className="impact-actions">{queued ? <span className="sent-confirm"><Icon name="check" size={16}/> Communication kit queued for host approval</span> : <button className="dark-button" onClick={() => setQueued(true)}>Queue {eventMoved ? "87" : "327"} attendee updates <Icon name="send" size={15}/></button>}<button className="outline-button" onClick={close}>Save as draft</button></div><p className="delivery-note"><Icon name="lock" size={13}/> BuildCircle stages these messages for review. Connect a verified email delivery provider before external email is released.</p></>}</div>;
 }
 
 function ShowcaseModal({ publish }: { publish: (project: { name: string; description: string; image?: string }) => void }) {
