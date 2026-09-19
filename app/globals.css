@@ -245,3 +245,5 @@ body * { font-family:var(--font-urbanist) !important; }
 @media (max-width:640px) { .event-list-actions { flex-wrap:wrap; }.event-list-actions .small-community { flex-basis:100%; }.event-row-pass { margin-left:auto; } }
 
 .event-filter-empty { display:flex; align-items:center; gap:10px; padding:18px; border:1px dashed #c9c0e2; border-radius:11px; background:var(--surface); color:var(--muted); }.event-filter-empty > svg { color:var(--purple-deep); }.event-filter-empty > div { flex:1; }.event-filter-empty b { color:var(--text); font-size:11px; }.event-filter-empty p { margin:3px 0 0; font-size:10px; }.event-filter-empty button { padding:6px 8px; border-radius:6px; color:var(--purple-deep); background:var(--lavender); font-size:10px; font-weight:750; }
+
+.form-error { margin:8px 0 0; padding:8px 10px; border:1px solid #efb8c2; border-radius:7px; color:#a32745; background:#fff0f2; font-size:10px; font-weight:700; line-height:1.35; }
