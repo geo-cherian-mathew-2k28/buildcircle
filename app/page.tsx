@@ -1,0 +1,511 @@
+"use client";
+
+import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
+import QRCode from "qrcode";
+
+type Page = "home" | "explore" | "community" | "events" | "notifications" | "profile";
+type Modal = "create" | "register" | "pass" | "checkin" | "digest" | "impact" | "showcase" | "membership" | null;
+type ProfileDialogType = "edit" | "projects" | "project" | "circles" | null;
+type ProjectName = "Signalboard" | "Field Notes";
+type UserProfile = {
+  name: string;
+  bio: string;
+  location: string;
+  role: string;
+  website: string;
+};
+type Message = {
+  id: number;
+  user: string;
+  initials: string;
+  shade: string;
+  time: string;
+  body: string;
+  tag: string;
+  replies: number;
+  reactions: number;
+  accepted: boolean;
+  project?: boolean;
+  image?: string;
+};
+type ThreadReply = {
+  id: number;
+  user: string;
+  shade: string;
+  body: string;
+  time: string;
+};
+type DigestDestination = "community" | "explore" | "events";
+type DigestItem = {
+  category: string;
+  title: string;
+  summary: string;
+  action: string;
+  destination: DigestDestination;
+  icon: "reply" | "sparkle" | "calendar" | "pin";
+  tone: "teal" | "violet" | "orange" | "pink";
+};
+type DigestPayload = {
+  generatedAt: string;
+  intro: string;
+  stats: { value: string; label: string }[];
+  items: DigestItem[];
+  source: "openai" | "fallback" | "configuration";
+  message?: string;
+};
+
+const avatar = (name: string, shade = "violet") => (
+  <span className={`avatar ${shade}`}>{name.split(" ").map((word) => word[0]).slice(0, 2).join("")}</span>
+);
+
+const Icon = ({ name, size = 18 }: { name: string; size?: number }) => {
+  const paths: Record<string, React.ReactNode> = {
+    grid: <><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></>,
+    compass: <><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2.2 4.8-4.8 2.2 2.2-4.8 4.8-2.2Z"/></>,
+    people: <><path d="M16 20v-1.8a4.2 4.2 0 0 0-4.2-4.2H6.2A4.2 4.2 0 0 0 2 18.2V20"/><circle cx="9" cy="6.5" r="3.5"/><path d="M17 4.4a3.5 3.5 0 0 1 0 6.6M22 20v-1.8a4.2 4.2 0 0 0-3-4"/></>,
+    calendar: <><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></>,
+    bell: <><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 22h4"/></>,
+    user: <><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></>,
+    search: <><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></>,
+    plus: <path d="M12 5v14M5 12h14"/>,
+    sparkle: <><path d="m12 3-1.2 5.7L5 10l5.8 1.3L12 17l1.2-5.7L19 10l-5.8-1.3L12 3Z"/><path d="m19 16-.5 2.4L16 19l2.5.6L19 22l.5-2.4L22 19l-2.5-.6L19 16Z"/></>,
+    arrow: <path d="M5 12h14m-6-6 6 6-6 6"/>,
+    hash: <path d="M5 9h14M5 15h14M9 3 7 21M17 3l-2 18"/>,
+    send: <path d="m22 2-7 20-4-9-9-4 20-7ZM11 13l4-4"/>,
+    heart: <path d="M20.8 4.6a5.4 5.4 0 0 0-7.6 0L12 5.8l-1.2-1.2a5.4 5.4 0 0 0-7.6 7.6L12 21l8.8-8.8a5.4 5.4 0 0 0 0-7.6Z"/>,
+    reply: <><path d="M9 17 4 12l5-5"/><path d="M4 12h9a7 7 0 0 1 7 7"/></>,
+    more: <><circle cx="5" cy="12" r="1" fill="currentColor"/><circle cx="12" cy="12" r="1" fill="currentColor"/><circle cx="19" cy="12" r="1" fill="currentColor"/></>,
+    paperclip: <path d="m20.5 11.5-8.7 8.7a5 5 0 0 1-7-7l9-9a3.5 3.5 0 0 1 5 5l-9 9a2 2 0 0 1-3-3l8-8"/>,
+    image: <><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m21 15-5-5L5 20"/></>,
+    check: <path d="m5 12 4 4L19 6"/>,
+    chevron: <path d="m9 18 6-6-6-6"/>,
+    close: <path d="m6 6 12 12M18 6 6 18"/>,
+    lock: <><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></>,
+    pin: <><path d="M12 17v5M8 3h8l-1 6 3 3v2H6v-2l3-3-1-6Z"/></>,
+    file: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></>,
+    wand: <><path d="m15 4 5 5M6 21l12-12-5-5L1 16l5 5Z"/><path d="m4 6 1-3 1 3 3 1-3 1-1 3-1-3-3-1 3-1Z"/></>,
+  };
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name] || paths.grid}</svg>;
+};
+
+const communities = [
+  { name: "AI Agents", members: "8.4k", color: "teal", badge: "Joined", description: "Build autonomous systems, share patterns and ship useful agents.", tags: ["Agents", "LLMs", "Automation"] },
+  { name: "Codex Builders", members: "12.8k", color: "violet", badge: "Joined", description: "A practical space for people building with code and creative curiosity.", tags: ["Web", "Open source", "AI"] },
+  { name: "IoT Builders", members: "5.2k", color: "orange", badge: "Join", description: "Sensors, embedded systems and the messy joy of physical computing.", tags: ["ESP32", "Hardware", "Robotics"] },
+  { name: "UI/UX Builders", members: "4.9k", color: "pink", badge: "Join", description: "Interfaces people remember, systems teams can actually use.", tags: ["Design", "Product", "Research"] },
+];
+
+const messagesSeed: Message[] = [
+  { id: 1, user: "Maya Chen", initials: "MC", shade: "orange", time: "10:24 AM", body: "I’m moving a FastAPI side project from Railway to a Docker setup. Any deployment patterns you’ve found reliable for small apps?", tag: "Question", replies: 12, reactions: 8, accepted: false },
+  { id: 2, user: "Ishaan Rao", initials: "IR", shade: "teal", time: "10:42 AM", body: "For a clean first pass: Dockerfile + Compose, an Nginx reverse proxy, and health checks. I wrote up the flow we use in the project docs.", tag: "Reply", replies: 3, reactions: 14, accepted: true },
+  { id: 3, user: "Alina Brooks", initials: "AB", shade: "pink", time: "11:05 AM", body: "Sharing a tiny tool we built to inspect agent traces visually. It maps tool calls, latency and failure branches without dumping a wall of JSON.", tag: "Showcase", replies: 7, reactions: 21, accepted: false, project: true },
+];
+
+const channelDetails: Record<string, { title: string; description: string; welcome: string; welcomeCopy: string; placeholder: string; readOnly?: boolean }> = {
+  general: {
+    title: "General",
+    description: "The shared lounge for ideas, introductions and useful detours.",
+    welcome: "Welcome to #General",
+    welcomeCopy: "Introduce yourself, swap notes from the week, or start a conversation worth having.",
+    placeholder: "Start a conversation in #General",
+  },
+  help: {
+    title: "Help",
+    description: "Ask, unblock and learn together.",
+    welcome: "Welcome to #Help",
+    welcomeCopy: "A place to ask technical questions, trade implementation details, and give generous feedback.",
+    placeholder: "Ask or share with #Help",
+  },
+  projects: {
+    title: "Projects",
+    description: "Share prototypes, find collaborators and celebrate work in progress.",
+    welcome: "Welcome to #Projects",
+    welcomeCopy: "Show the work, the rough edges and the next thing you need help solving.",
+    placeholder: "Share a project update in #Projects",
+  },
+  resources: {
+    title: "Resources",
+    description: "A curated shelf of practical tools, papers and references.",
+    welcome: "Welcome to #Resources",
+    welcomeCopy: "Post useful things with enough context to help the next builder pick them up.",
+    placeholder: "Share a resource with #Resources",
+  },
+  announcements: {
+    title: "Announcements",
+    description: "Important updates from the AI Agents team.",
+    welcome: "Welcome to #Announcements",
+    welcomeCopy: "Only admins and moderators can post here, so the signal stays high.",
+    placeholder: "Announcements are managed by moderators",
+    readOnly: true,
+  },
+};
+
+const channelSeeds: Record<string, Message[]> = {
+  help: messagesSeed,
+  general: [
+    { id: 101, user: "Leena Thomas", initials: "LT", shade: "pink", time: "9:18 AM", body: "Morning, builders! What’s one small thing you shipped this week that you’re quietly proud of?", tag: "Discussion", replies: 18, reactions: 26, accepted: false },
+    { id: 102, user: "Nikhil Varma", initials: "NV", shade: "teal", time: "9:36 AM", body: "I finally replaced a brittle cron workflow with a tiny agent that checks data quality and opens a structured issue when something drifts.", tag: "Discussion", replies: 6, reactions: 17, accepted: false },
+  ],
+  projects: [
+    { id: 201, user: "Alina Brooks", initials: "AB", shade: "pink", time: "11:05 AM", body: "TraceView is now open for early testers. It makes the invisible parts of an agent run feel like a map instead of a log file.", tag: "Showcase", replies: 7, reactions: 21, accepted: false, project: true },
+    { id: 202, user: "Rahul K", initials: "RK", shade: "orange", time: "Yesterday", body: "Made a personal research assistant that turns a folder of PDFs into an evidence trail. Next up: citations that survive team reviews.", tag: "Showcase", replies: 9, reactions: 32, accepted: false, project: true },
+  ],
+  resources: [
+    { id: 301, user: "Ishaan Rao", initials: "IR", shade: "teal", time: "8:52 AM", body: "Resource drop: a concise guide to evaluating tool-using agents. The failure taxonomy alone is worth bookmarking before you add another prompt layer.", tag: "Resource", replies: 4, reactions: 38, accepted: false },
+    { id: 302, user: "Maya Chen", initials: "MC", shade: "orange", time: "Yesterday", body: "I put together a starter repo for FastAPI + Docker + health checks. It’s intentionally boring, which is exactly why it has been useful.", tag: "Resource", replies: 11, reactions: 24, accepted: false },
+  ],
+  announcements: [
+    { id: 401, user: "AI Agents Team", initials: "AT", shade: "violet", time: "9:00 AM", body: "Registration for Saturday’s Build your first AI agent workshop is open. It’s a hands-on, beginner-friendly session — bring an idea you want to make useful.", tag: "Announcement", replies: 0, reactions: 46, accepted: false },
+    { id: 402, user: "Maya Chen", initials: "MC", shade: "orange", time: "Yesterday", body: "Community office hours are moving to Thursdays at 6:30 PM IST. Drop into #Help beforehand if you want your question added to the agenda.", tag: "Announcement", replies: 0, reactions: 19, accepted: false },
+  ],
+};
+
+function MiniLogo({ color = "violet" }: { color?: string }) {
+  return <span className={`mini-logo ${color}`}><i/><i/><i/></span>;
+}
+
+function PlatformLogo({ className = "" }: { className?: string }) {
+  return <img className={`platform-logo ${className}`.trim()} src="/buildcircle-logo.png" alt="BuildCircle logo" />;
+}
+
+export default function BuildCircle() {
+  const [page, setPage] = useState<Page>("home");
+  const [modal, setModal] = useState<Modal>(null);
+  const [joined, setJoined] = useState<string[]>(["AI Agents", "Codex Builders"]);
+  const [channel, setChannel] = useState("help");
+  const [channelMessages, setChannelMessages] = useState(channelSeeds);
+  const [draft, setDraft] = useState("");
+  const [attached, setAttached] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [registered, setRegistered] = useState(false);
+  const [checkedIn, setCheckedIn] = useState(false);
+  const [eventMoved, setEventMoved] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  const [toast, setToast] = useState("");
+  const [theme, setTheme] = useState<"light" | "dark">("light");
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
+
+  const notify = (text: string) => {
+    setToast(text);
+    window.setTimeout(() => setToast(""), 2800);
+  };
+
+  const addMessage = (event: FormEvent) => {
+    event.preventDefault();
+    if (!draft.trim() && !attached) return;
+    setChannelMessages((current) => ({
+      ...current,
+      [channel]: [...(current[channel] || []), {
+        id: Date.now(), user: "Arjun Nair", initials: "AN", shade: "violet", time: "Just now", body: draft || "Shared an image", tag: channel === "projects" ? "Showcase" : "Discussion", replies: 0, reactions: 0, accepted: false, image: attached || undefined,
+      }],
+    }));
+    setDraft(""); setAttached(null); notify(`Posted to #${channelDetails[channel].title}`);
+  };
+
+  const switchPage = (next: Page) => { setPage(next); setShowSearch(false); };
+  const join = (name: string) => {
+    setJoined((items) => items.includes(name) ? items : [...items, name]);
+    notify(`You joined ${name}`);
+  };
+
+  const content = useMemo(() => {
+    if (page === "community") return <CommunityView channel={channel} setChannel={setChannel} channelMessages={channelMessages} setChannelMessages={setChannelMessages} draft={draft} setDraft={setDraft} attached={attached} setAttached={setAttached} onSubmit={addMessage} onShowcase={() => setModal("showcase")} onMembership={() => setModal("membership")} />;
+    if (page === "explore") return <ExploreView joined={joined} onJoin={join} onOpen={() => setPage("community")} />;
+    if (page === "events") return <EventsView registered={registered} eventMoved={eventMoved} onRegister={() => setModal("register")} onPass={() => setModal("pass")} onCheckin={() => setModal("checkin")} onImpact={() => setModal("impact")} onMove={() => { setEventMoved(true); notify("Event time updated — attendees are being reviewed"); }} />;
+    if (page === "notifications") return <NotificationsView onOpen={() => setPage("community")} />;
+    if (page === "profile") return <ProfileView />;
+    return <HomeView onExplore={() => setPage("explore")} onCommunity={() => setPage("community")} onEvents={() => setPage("events")} onDigest={() => setModal("digest")} />;
+  }, [page, channel, channelMessages, draft, attached, joined, registered, eventMoved]);
+
+  return (
+    <main className="app-shell">
+      <aside className="sidebar">
+        <button className="brand" onClick={() => switchPage("home")} aria-label="BuildCircle home"><PlatformLogo className="brand-logo"/><span>build<span>circle</span></span></button>
+        <nav className="primary-nav" aria-label="Primary navigation">
+          <NavItem label="Home" icon="grid" active={page === "home"} onClick={() => switchPage("home")} />
+          <NavItem label="Explore" icon="compass" active={page === "explore"} onClick={() => switchPage("explore")} />
+          <NavItem label="Communities" icon="people" active={page === "community"} onClick={() => switchPage("community")} />
+          <NavItem label="Events" icon="calendar" active={page === "events"} onClick={() => switchPage("events")} />
+          <NavItem label="Notifications" icon="bell" active={page === "notifications"} count="3" onClick={() => switchPage("notifications")} />
+        </nav>
+        <div className="sidebar-spacer" />
+        <button className="create-button" onClick={() => setModal("create")}><Icon name="plus" size={17}/> Create</button>
+        <button className="account-block" onClick={() => switchPage("profile")}>{avatar("Arjun Nair", "violet")}<span><b>Arjun Nair</b><small>Builder profile</small></span><Icon name="chevron" size={16}/></button>
+      </aside>
+
+      <section className="main-area">
+        <header className="topbar">
+          <div className="mobile-brand"><PlatformLogo className="mobile-logo"/>buildcircle</div>
+          <div className="search-wrap">
+            <Icon name="search" size={17}/><input value={query} onChange={(e) => { setQuery(e.target.value); setShowSearch(true); }} onFocus={() => setShowSearch(true)} placeholder="Search communities, discussions, events..." />
+            <kbd>⌘ K</kbd>
+            {showSearch && <SearchResults query={query} onNavigate={(target) => { switchPage(target); setQuery(""); }} />}
+          </div>
+          <div className="top-actions"><button className="icon-button" aria-label="Toggle theme" onClick={() => setTheme(theme === "light" ? "dark" : "light")}>{theme === "light" ? "◐" : "☼"}</button><button className="notification-dot" onClick={() => switchPage("notifications")}><Icon name="bell"/><i/></button>{avatar("Arjun Nair", "violet")}</div>
+        </header>
+        {content}
+      </section>
+
+      <nav className="mobile-nav" aria-label="Mobile navigation">
+        <NavItem label="Home" icon="grid" active={page === "home"} onClick={() => switchPage("home")} />
+        <NavItem label="Explore" icon="compass" active={page === "explore"} onClick={() => switchPage("explore")} />
+        <button className="mobile-create" onClick={() => setModal("create")}><Icon name="plus"/></button>
+        <NavItem label="Events" icon="calendar" active={page === "events"} onClick={() => switchPage("events")} />
+        <NavItem label="Profile" icon="user" active={page === "profile"} onClick={() => switchPage("profile")} />
+      </nav>
+
+      {modal && <ModalLayer type={modal} close={() => setModal(null)} registered={registered} checkedIn={checkedIn} eventMoved={eventMoved} onNavigate={(target) => { switchPage(target); setModal(null); }} onRegister={() => { setRegistered(true); setModal("pass"); notify("Registration confirmed — your QR pass is ready"); }} onCheckin={() => { setCheckedIn(true); notify("Attendee checked in successfully"); }} onMove={() => { setEventMoved(true); setModal("impact"); }} onShowcase={() => { setModal(null); setPage("community"); notify("Your project showcase was published"); }} />}
+      {toast && <div className="toast"><Icon name="check" size={16}/>{toast}</div>}
+    </main>
+  );
+}
+
+function NavItem({ label, icon, active, count, onClick }: { label: string; icon: string; active?: boolean; count?: string; onClick: () => void }) {
+  return <button onClick={onClick} className={`nav-item ${active ? "active" : ""}`}><Icon name={icon}/><span>{label}</span>{count && <em>{count}</em>}</button>;
+}
+
+function HomeView({ onExplore, onCommunity, onEvents, onDigest }: { onExplore: () => void; onCommunity: () => void; onEvents: () => void; onDigest: () => void }) {
+  const [openCardMenu, setOpenCardMenu] = useState<"question" | "project" | null>(null);
+  const [savedCards, setSavedCards] = useState<string[]>([]);
+  const toggleSaved = (card: string) => setSavedCards((cards) => cards.includes(card) ? cards.filter((item) => item !== card) : [...cards, card]);
+  return <div className="page-content home-page">
+    <section className="welcome-row"><div><p className="eyebrow">FRIDAY, SEPTEMBER 19</p><h1>Good morning, Arjun <span>✦</span></h1><p className="subtitle">Your builder network is moving. Here’s what’s worth your attention.</p></div><button className="ai-button" onClick={onDigest}><Icon name="sparkle" size={17}/><span><b>Today’s digest</b><small>Powered by community activity</small></span><Icon name="arrow" size={16}/></button></section>
+    <div className="story-strip">
+      {communities.slice(0, 3).map((community, index) => <button className="community-pill" key={community.name} onClick={onCommunity}><MiniLogo color={community.color}/><span><b>{community.name}</b><small>{index === 0 ? "18 new posts" : index === 1 ? "Workshop tomorrow" : "6 new projects"}</small></span><Icon name="chevron" size={15}/></button>)}
+      <button className="discover-pill" onClick={onExplore}><Icon name="plus" size={17}/><span>Discover<br/>communities</span></button>
+    </div>
+    <div className="home-grid">
+      <section className="feed"><div className="section-title"><div><p className="eyebrow">FOR YOU</p><h2>Activity around your circles</h2></div><button className="text-button" onClick={onCommunity}>View all <Icon name="arrow" size={15}/></button></div>
+        <article className="feed-card featured"><div className="card-topline"><span className="community-label"><MiniLogo color="teal"/> AI Agents · <b>#Help</b></span><div className="card-menu"><button className="quiet-button" aria-label="Options for FastAPI discussion" aria-expanded={openCardMenu === "question"} onClick={() => setOpenCardMenu((current) => current === "question" ? null : "question")}><Icon name="more"/></button>{openCardMenu === "question" && <div className="card-menu-panel" role="menu"><button role="menuitem" onClick={() => { toggleSaved("question"); setOpenCardMenu(null); }}>{savedCards.includes("question") ? "Remove saved post" : "Save for later"}</button><button role="menuitem" onClick={() => { setOpenCardMenu(null); onCommunity(); }}>Open discussion <Icon name="arrow" size={14}/></button></div>}</div></div><div className="post-author">{avatar("Maya Chen", "orange")}<span><b>Maya Chen</b><small>ML Engineer · 14 min ago</small></span></div><h3>What’s your reliable FastAPI deployment setup?</h3><p>I’m moving a side project from Railway to Docker. Curious what deployment patterns are holding up well for small apps.</p><div className="feed-actions"><button><Icon name="heart" size={16}/> 8</button><button onClick={onCommunity}><Icon name="reply" size={16}/> 12 replies</button><span className="status-chip question">Question</span></div></article>
+        <article className="feed-card project-card"><div className="card-topline"><span className="community-label"><MiniLogo color="violet"/> Codex Builders · <b>#Projects</b></span><div className="card-menu"><button className="quiet-button" aria-label="Options for TraceView project" aria-expanded={openCardMenu === "project"} onClick={() => setOpenCardMenu((current) => current === "project" ? null : "project")}><Icon name="more"/></button>{openCardMenu === "project" && <div className="card-menu-panel" role="menu"><button role="menuitem" onClick={() => { toggleSaved("project"); setOpenCardMenu(null); }}>{savedCards.includes("project") ? "Remove saved project" : "Save for later"}</button><button role="menuitem" onClick={() => { setOpenCardMenu(null); onExplore(); }}>Explore project <Icon name="arrow" size={14}/></button></div>}</div></div><div className="project-preview"><div className="project-visual"><div className="trace-node a"/><div className="trace-node b"/><div className="trace-node c"/><svg viewBox="0 0 250 120"><path d="M35 65C66 65 69 27 104 27s35 65 70 65 25-39 45-39" fill="none" stroke="currentColor" strokeWidth="2"/></svg><span>TRACEVIEW</span></div><div><div className="post-author">{avatar("Alina Brooks", "pink")}<span><b>Alina Brooks</b><small>Product designer · 28 min ago</small></span></div><h3>TraceView — make agent runs visible</h3><p>A visual debugger for tool calls, latency and failure paths.</p><div className="tag-row"><span>TypeScript</span><span>OpenAI</span><span>OSS</span></div></div></div><div className="feed-actions"><button><Icon name="heart" size={16}/> 21</button><button onClick={onCommunity}><Icon name="reply" size={16}/> 7 replies</button><span className="status-chip showcase">Showcase</span></div></article>
+      </section>
+      <aside className="right-rail"><div className="section-title"><div><p className="eyebrow">UP NEXT</p><h2>Events you’ll like</h2></div><button className="text-button" onClick={onEvents}>All events</button></div>
+        <button className="event-card" onClick={onEvents}><div className="event-date"><b>21</b><span>SEP</span></div><div><p className="event-type">WORKSHOP · ONLINE</p><h3>Build your first AI agent</h3><p>Sat · 4:00 PM · AI Agents</p><div className="attendees">{avatar("Leah", "orange")}{avatar("Nikhil", "teal")}{avatar("Maya", "pink")}<span>+128 going</span></div></div><Icon name="chevron" size={17}/></button>
+        <button className="event-card compact" onClick={onEvents}><div className="event-date purple"><b>25</b><span>SEP</span></div><div><p className="event-type">MEETUP · KOCHI</p><h3>Build & Brew #14</h3><p>Thu · 6:30 PM · Codex Builders</p></div><Icon name="chevron" size={17}/></button>
+        <div className="section-title lower"><div><p className="eyebrow">SUGGESTED</p><h2>Expand your circles</h2></div></div>
+        {communities.slice(2).map((community) => <div className="suggestion" key={community.name}><MiniLogo color={community.color}/><div><b>{community.name}</b><small>{community.members} builders</small></div><button onClick={() => onExplore()}>View</button></div>)}
+      </aside>
+    </div>
+  </div>;
+}
+
+function CommunityView({ channel, setChannel, channelMessages, setChannelMessages, draft, setDraft, attached, setAttached, onSubmit, onShowcase, onMembership }: { channel: string; setChannel: (value: string) => void; channelMessages: Record<string, Message[]>; setChannelMessages: React.Dispatch<React.SetStateAction<Record<string, Message[]>>>; draft: string; setDraft: (value: string) => void; attached: string | null; setAttached: (value: string | null) => void; onSubmit: (event: FormEvent) => void; onShowcase: () => void; onMembership: () => void }) {
+  const [thread, setThread] = useState<number | null>(null);
+  const [threadDraft, setThreadDraft] = useState("");
+  const [threadReplies, setThreadReplies] = useState<Record<number, ThreadReply[]>>({
+    1: [{ id: 1001, user: "Hari Menon", shade: "teal", body: "A deploy health-check endpoint is worth adding from day one. It gives you a simple signal when you move providers.", time: "8 min ago" }, { id: 1002, user: "Lena Park", shade: "pink", body: "We use Fly.io with the same Docker setup — very little ceremony for a small API.", time: "4 min ago" }],
+    2: [{ id: 1003, user: "Maya Chen", shade: "orange", body: "This is exactly the level of boring I was hoping to find. Thank you!", time: "6 min ago" }],
+    3: [{ id: 1004, user: "Nikhil Varma", shade: "teal", body: "The latency branch is especially useful. Would love to try this against a multi-agent trace.", time: "9 min ago" }],
+    101: [{ id: 1005, user: "Maya Chen", shade: "orange", body: "I finally made time for a proper evaluation set instead of testing by feel.", time: "3 min ago" }],
+    102: [{ id: 1006, user: "Leena Thomas", shade: "blue", body: "That sounds like the kind of quiet automation that pays for itself every week.", time: "7 min ago" }],
+    201: [{ id: 1007, user: "Alina Brooks", shade: "pink", body: "I’m looking for a few people with complex tool traces to pressure-test it with.", time: "5 min ago" }],
+    202: [{ id: 1008, user: "Rahul K", shade: "yellow", body: "The evidence chain is the part I wish research tools got right more often.", time: "12 min ago" }],
+    301: [{ id: 1009, user: "Ishaan Rao", shade: "teal", body: "The rubric section is concise enough to use in a real review.", time: "14 min ago" }],
+  });
+  const details = channelDetails[channel] || channelDetails.general;
+  const messages = channelMessages[channel] || [];
+  const selected = messages.find((message) => message.id === thread);
+  const selectedReplies = thread ? threadReplies[thread] || [] : [];
+  const isAnnouncement = details.readOnly;
+  const switchChannel = (next: string) => { setChannel(next); setThread(null); setThreadDraft(""); setDraft(""); setAttached(null); };
+  const react = (id: number) => setChannelMessages((current) => ({ ...current, [channel]: (current[channel] || []).map((item) => item.id === id ? { ...item, reactions: item.reactions + 1 } : item) }));
+  const chooseFile = (event: ChangeEvent<HTMLInputElement>) => { const file = event.target.files?.[0]; if (file) setAttached(URL.createObjectURL(file)); };
+  const openThread = (messageId: number) => { setThread(messageId); setThreadDraft(""); };
+  const sendThreadReply = (event: FormEvent) => {
+    event.preventDefault();
+    if (!thread || !threadDraft.trim()) return;
+    const reply: ThreadReply = { id: Date.now(), user: "Arjun Nair", shade: "violet", body: threadDraft.trim(), time: "Just now" };
+    setThreadReplies((current) => ({ ...current, [thread]: [...(current[thread] || []), reply] }));
+    setChannelMessages((current) => ({ ...current, [channel]: (current[channel] || []).map((message) => message.id === thread ? { ...message, replies: message.replies + 1 } : message) }));
+    setThreadDraft("");
+  };
+  const links: Array<[string, string]> = [["general", "General"], ["help", "Help"], ["projects", "Projects"], ["resources", "Resources"]];
+
+  return <div className="community-layout">
+    <aside className="channel-sidebar"><div className="community-head"><MiniLogo color="teal"/><div><b>AI Agents</b><small>8,432 members</small></div></div><button className="community-switcher" onClick={onMembership} aria-label="Browse AI Agents members"><Icon name="people" size={13}/><span>Members</span><Icon name="chevron" size={14}/></button><div className="channel-group"><p>CHANNELS</p>{links.map(([id, label]) => <button className={`channel-link ${channel === id ? "selected" : ""}`} key={id} onClick={() => switchChannel(id)}><Icon name="hash" size={16}/>{label}{id === "help" && <em>4</em>}</button>)}<button className={`channel-link ${channel === "announcements" ? "selected" : ""}`} onClick={() => switchChannel("announcements")}><Icon name="pin" size={15}/>Announcements</button></div><div className="community-mini-event"><p>UPCOMING IN AI AGENTS</p><b>Build your first AI agent</b><small>Sat · 4:00 PM</small></div></aside>
+    <section className="channel-main"><header className="channel-head"><div><h2><Icon name={isAnnouncement ? "pin" : "hash"} size={21}/>{details.title}</h2><p>{details.description}</p></div><div className="channel-members">{avatar("Maya", "orange")}{avatar("Ishaan", "teal")}{avatar("Alina", "pink")}<span>8.4k</span></div></header>
+      <div className="message-list"><div className="date-divider"><span>Today</span></div><div className="channel-welcome"><MiniLogo color="teal"/><h3>{details.welcome}</h3><p>{details.welcomeCopy}</p>{isAnnouncement && <span className="announcement-lock"><Icon name="lock" size={12}/> Read-only for members</span>}</div>{messages.map((message) => <article className="message" key={message.id}><div className="message-avatar">{avatar(message.user, message.shade)}</div><div className="message-body"><div className="message-meta"><b>{message.user}</b><span>{message.time}</span>{message.tag === "Question" && <i className="message-kind question">Question</i>}{message.tag === "Showcase" && <i className="message-kind showcase">Showcase</i>}{message.tag === "Announcement" && <i className="message-kind announcement">Announcement</i>}</div><p>{message.body}</p>{message.image && <img className="message-image" src={message.image} alt="Message attachment" />}{message.project && <div className="inline-project"><span className="inline-project-icon">⌘</span><div><b>{message.id === 202 ? "Evidence trail" : "TraceView"}</b><small>{message.id === 202 ? "Research assistant for teams" : "Visual debugger for agent runs"}</small></div></div>}{message.accepted && <div className="accepted"><Icon name="check" size={15}/> Accepted answer</div>}<div className="message-actions"><button onClick={() => react(message.id)}><Icon name="heart" size={15}/>{message.reactions || "React"}</button>{!isAnnouncement && <button onClick={() => openThread(message.id)}><Icon name="reply" size={15}/>{message.replies ? `${message.replies} replies` : "Reply"}</button>}</div></div></article>)}</div>
+      {isAnnouncement ? <div className="read-only-composer"><Icon name="lock" size={16}/><span>Only AI Agents admins and moderators can post announcements.</span></div> : <form className="composer" onSubmit={onSubmit}>{attached && <div className="attachment-preview"><img src={attached} alt="Pending upload"/><button type="button" onClick={() => setAttached(null)}><Icon name="close" size={13}/></button></div>}<input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={details.placeholder}/><div className="composer-tools"><label className="tool-button" title="Attach image or file"><Icon name="paperclip" size={18}/><input type="file" accept="image/*,.pdf,.doc,.docx" onChange={chooseFile}/></label>{channel === "projects" && <button type="button" className="tool-button" onClick={onShowcase}><Icon name="sparkle" size={17}/><span>Showcase</span></button>}<button className="send-button" type="submit"><Icon name="send" size={17}/></button></div></form>}</section>
+    {thread && selected && <aside className="thread-panel"><header><button onClick={() => setThread(null)}><Icon name="close" size={18}/></button><div><b>Thread</b><small>#{channel}</small></div></header><div className="thread-root"><b>{selected.user}</b><p>{selected.body}</p></div><div className="thread-count">{selected.replies} replies</div>{selectedReplies.length ? selectedReplies.map((reply) => <div className="thread-reply" key={reply.id}>{avatar(reply.user, reply.shade)}<div><b>{reply.user}</b><p>{reply.body}</p><small>{reply.time}</small></div></div>) : <p className="empty-thread">No replies yet. Be the first to add a useful thought.</p>}<form className="thread-composer" onSubmit={sendThreadReply}><input value={threadDraft} onChange={(event) => setThreadDraft(event.target.value)} placeholder={`Reply to ${selected.user}`}/><button type="submit" aria-label="Send thread reply"><Icon name="send" size={16}/></button></form></aside>}
+  </div>;
+}
+
+function LegacyCommunityView({ channel, setChannel, messages, setMessages, draft, setDraft, attached, setAttached, onSubmit, onShowcase }: { channel: string; setChannel: (value: string) => void; messages: typeof messagesSeed; setMessages: React.Dispatch<React.SetStateAction<typeof messagesSeed>>; draft: string; setDraft: (value: string) => void; attached: string | null; setAttached: (value: string | null) => void; onSubmit: (event: FormEvent) => void; onShowcase: () => void }) {
+  const [thread, setThread] = useState<number | null>(null);
+  const selected = messages.find((message) => message.id === thread);
+  const react = (id: number) => setMessages((items) => items.map((item) => item.id === id ? { ...item, reactions: item.reactions + 1 } : item));
+  const chooseFile = (event: ChangeEvent<HTMLInputElement>) => { const file = event.target.files?.[0]; if (file) setAttached(URL.createObjectURL(file)); };
+  return <div className="community-layout">
+    <aside className="channel-sidebar"><div className="community-head"><MiniLogo color="teal"/><div><b>AI Agents</b><small>8,432 members</small></div><button><Icon name="more"/></button></div><button className="community-switcher"><span>Member</span><Icon name="chevron" size={14}/></button><div className="channel-group"><p>CHANNELS <button><Icon name="plus" size={14}/></button></p>{[["general", "General"], ["help", "Help"], ["projects", "Projects"], ["resources", "Resources"]].map(([id, label]) => <button className={`channel-link ${channel === id ? "selected" : ""}`} key={id} onClick={() => setChannel(id)}><Icon name="hash" size={16}/>{label}{id === "help" && <em>4</em>}</button>)}<button className={`channel-link ${channel === "announcements" ? "selected" : ""}`} onClick={() => setChannel("announcements")}><Icon name="pin" size={15}/>Announcements</button></div><div className="community-mini-event"><p>UPCOMING IN AI AGENTS</p><b>Build your first AI agent</b><small>Sat · 4:00 PM</small><button>View event <Icon name="arrow" size={14}/></button></div></aside>
+    <section className="channel-main"><header className="channel-head"><div><h2><Icon name={channel === "announcements" ? "pin" : "hash"} size={21}/>{channel[0].toUpperCase() + channel.slice(1)}</h2><p>{channel === "help" ? "Ask, unblock and learn together." : "Talk with builders in AI Agents."}</p></div><div className="channel-members">{avatar("Maya", "orange")}{avatar("Ishaan", "teal")}{avatar("Alina", "pink")}<span>8.4k</span><button className="icon-button"><Icon name="people" size={17}/></button></div></header>
+      <div className="message-list"><div className="date-divider"><span>Today</span></div><div className="channel-welcome"><MiniLogo color="teal"/><h3>Welcome to #Help</h3><p>A place to ask technical questions, trade implementation details, and give generous feedback.</p><button>View channel guidelines</button></div>{messages.map((message) => <article className="message" key={message.id}><div className="message-avatar">{avatar(message.user, message.shade)}</div><div className="message-body"><div className="message-meta"><b>{message.user}</b><span>{message.time}</span>{message.tag === "Question" && <i className="message-kind question">Question</i>}{message.tag === "Showcase" && <i className="message-kind showcase">Showcase</i>}</div><p>{message.body}</p>{message.image && <img className="message-image" src={message.image} alt="Message attachment" />}{message.project && <div className="inline-project"><span className="inline-project-icon">⌘</span><div><b>TraceView</b><small>Visual debugger for agent runs</small></div><button>Open project <Icon name="arrow" size={14}/></button></div>}{message.accepted && <div className="accepted"><Icon name="check" size={15}/> Accepted answer</div>}<div className="message-actions"><button onClick={() => react(message.id)}><Icon name="heart" size={15}/>{message.reactions || "React"}</button><button onClick={() => setThread(message.id)}><Icon name="reply" size={15}/>{message.replies ? `${message.replies} replies` : "Reply"}</button><button><Icon name="more" size={16}/></button></div></div></article>)}</div>
+      <form className="composer" onSubmit={onSubmit}>{attached && <div className="attachment-preview"><img src={attached} alt="Pending upload"/><button type="button" onClick={() => setAttached(null)}><Icon name="close" size={13}/></button></div>}<input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Ask or share with #Help"/><div className="composer-tools"><label className="tool-button" title="Attach image or file"><Icon name="paperclip" size={18}/><input type="file" accept="image/*,.pdf,.doc,.docx" onChange={chooseFile}/></label><button type="button" className="tool-button" onClick={onShowcase}><Icon name="sparkle" size={17}/><span>Showcase</span></button><button type="button" className="emoji-button">☺</button><button className="send-button" type="submit"><Icon name="send" size={17}/></button></div></form></section>
+    {thread && selected && <aside className="thread-panel"><header><button onClick={() => setThread(null)}><Icon name="close" size={18}/></button><div><b>Thread</b><small>#{channel}</small></div><button><Icon name="more"/></button></header><div className="thread-root"><b>{selected.user}</b><p>{selected.body}</p></div><div className="thread-count">{selected.replies} replies</div>{["A deploy health-check endpoint is worth adding from day one.", "We use Fly.io with the same Docker setup — very little ceremony."].map((reply, index) => <div className="thread-reply" key={reply}>{avatar(index ? "Lena" : "Hari", index ? "pink" : "teal")}<div><b>{index ? "Lena Park" : "Hari Menon"}</b><p>{reply}</p><small>{index ? "4 min ago" : "8 min ago"}</small></div></div>)}<div className="thread-composer"><input placeholder="Reply to thread"/><button><Icon name="send" size={16}/></button></div></aside>}
+  </div>;
+}
+
+function ExploreView({ joined, onJoin, onOpen }: { joined: string[]; onJoin: (name: string) => void; onOpen: () => void }) {
+  const [filter, setFilter] = useState("All");
+  const categories = ["All", "AI", "Software", "Hardware", "Design", "Open source", "Startups"];
+  return <div className="page-content explore-page"><section className="explore-hero"><p className="eyebrow">FIND YOUR PEOPLE</p><h1>Explore builder communities</h1><p>Go deep on what you’re building with people who get it.</p><div className="explore-search"><Icon name="search" size={18}/><input placeholder="Try ‘robotics’, ‘open source’, ‘Figma’..."/><button>Search</button></div></section><div className="filter-row">{categories.map((category) => <button key={category} onClick={() => setFilter(category)} className={filter === category ? "selected" : ""}>{category}</button>)}</div><div className="browse-head"><div><h2>Communities picked for you</h2><p>Based on your interests in AI, web and making things.</p></div><button className="text-button">Browse all <Icon name="arrow" size={15}/></button></div><div className="community-grid">{communities.concat([{ name: "Open Source Kerala", members: "6.1k", color: "blue", badge: "Join", description: "A kind, practical community for people building in the open.", tags: ["GitHub", "Maintainers", "Kerala"] }, { name: "Robotics Hub", members: "3.7k", color: "yellow", badge: "Request", description: "A home for makers moving atoms as well as pixels.", tags: ["Robotics", "ROS", "Hardware"] }]).map((community, index) => <article className="community-card" key={community.name}><div className={`community-cover ${community.color}`}><div className="cover-pattern"/><MiniLogo color={community.color}/>{index < 2 && <span className="featured-label">Featured</span>}</div><div className="community-card-body"><div className="community-name-row"><div><h3>{community.name}{joined.includes(community.name) && <Icon name="check" size={16}/>}</h3><p>{community.members} members · {index === 5 ? "Approval" : "Public"}</p></div><button className={joined.includes(community.name) ? "joined-button" : "join-button"} onClick={() => joined.includes(community.name) ? onOpen() : onJoin(community.name)}>{joined.includes(community.name) ? "Open" : community.badge}</button></div><p className="community-description">{community.description}</p><div className="tag-row">{community.tags.map((tag) => <span key={tag}>{tag}</span>)}</div><div className="builder-row"><div className="avatar-stack">{avatar("Priya", "pink")}{avatar("Hari", "teal")}{avatar("Zoya", "orange")}</div><span>Active this week</span></div></div></article>)}</div><section className="request-banner"><div className="request-art"><span>✦</span><span>◌</span><span>+</span></div><div><p className="eyebrow">CAN’T FIND YOUR NICHE?</p><h2>Start the circle you wish existed.</h2><p>Create a dedicated place to build, learn and connect around any craft.</p></div><button className="dark-button" onClick={onOpen}>Create a community <Icon name="arrow" size={16}/></button></section></div>;
+}
+
+function EventsView({ registered, eventMoved, onRegister, onPass, onCheckin, onImpact, onMove }: { registered: boolean; eventMoved: boolean; onRegister: () => void; onPass: () => void; onCheckin: () => void; onImpact: () => void; onMove: () => void }) {
+  const [tab, setTab] = useState<"discover" | "hosting">("discover");
+  return <div className="page-content events-page"><div className="events-top"><div><p className="eyebrow">BUILD TOGETHER, IN THE ROOM OR ONLINE</p><h1>Events for builders</h1><p>Find a workshop, bring your people, or make something happen.</p></div><button className="dark-button"><Icon name="plus" size={17}/> Create event</button></div><div className="event-tabs"><button className={tab === "discover" ? "active" : ""} onClick={() => setTab("discover")}>Discover events</button><button className={tab === "hosting" ? "active" : ""} onClick={() => setTab("hosting")}>Hosting <span>1</span></button></div>{tab === "discover" ? <><section className="featured-event"><div className="event-art"><div className="orb one"/><div className="orb two"/><div className="grid-lines"/><span className="event-poster-label">AI AGENTS<br/><b>LAB</b></span><span className="event-poster-type">HANDS-ON<br/>WORKSHOP</span></div><div className="featured-event-info"><span className="pill live">UPCOMING · ONLINE</span><h2>Build your first<br/><em>AI agent</em></h2><p>From an idea to a useful autonomous workflow: build, evaluate and ship a small agent with fellow builders.</p><div className="event-detail-row"><span><Icon name="calendar" size={16}/> Saturday, September 21</span><span><Icon name="grid" size={16}/> 4:00 PM – 6:00 PM IST</span></div><div className="event-host"><MiniLogo color="teal"/><span>Hosted by <b>AI Agents</b></span><div className="host-avatars">{avatar("Rhea", "pink")}{avatar("Adi", "orange")}<small>+2 hosts</small></div></div><div className="event-cta">{registered ? <><button className="registered-button" onClick={onPass}><Icon name="check" size={16}/> You’re registered</button><button className="pass-link" onClick={onPass}>View QR pass</button></> : <button className="dark-button" onClick={onRegister}>Register free <Icon name="arrow" size={16}/></button>}<span>128 builders are going</span></div></div></section><div className="browse-head event-browse"><div><h2>More to explore</h2><p>Small rooms, bright minds and useful momentum.</p></div><div className="filter-row mini"><button className="selected">All</button><button>This week</button><button>Online</button><button>Near me</button></div></div><div className="events-grid"><EventListCard date="25" month="SEP" name="Build & Brew #14" type="Community meetup · Kochi" color="purple"/><EventListCard date="28" month="SEP" name="Open source office hours" type="AMA · Online" color="orange"/><EventListCard date="03" month="OCT" name="Design systems, together" type="Workshop · Bengaluru" color="pink"/></div></> : <HostDashboard eventMoved={eventMoved} onImpact={onImpact} onMove={onMove} onCheckin={onCheckin}/>}</div>;
+}
+
+function EventListCard({ date, month, name, type, color }: { date: string; month: string; name: string; type: string; color: string }) {
+  return <article className="event-list-card"><div className={`event-list-cover ${color}`}><span className="list-shape s1"/><span className="list-shape s2"/><p>{type.split("·")[0]}</p></div><div className="event-list-body"><div className="event-date-line"><b>{date} {month}</b><span>· 6:30 PM</span></div><h3>{name}</h3><p>{type}</p><div><span className="small-community"><MiniLogo color={color}/> Codex Builders</span><button>Details <Icon name="arrow" size={14}/></button></div></div></article>;
+}
+
+function HostDashboard({ eventMoved, onImpact, onMove, onCheckin }: { eventMoved: boolean; onImpact: () => void; onMove: () => void; onCheckin: () => void }) {
+  return <section className="host-dashboard"><div className="host-heading"><div><span className="pill live">HOST CONSOLE</span><h2>Build your first AI agent</h2><p>Saturday, Sep 21 · {eventMoved ? "5:00 PM" : "4:00 PM"} IST · Online</p></div><button className="outline-button" onClick={onMove}><Icon name="calendar" size={16}/>{eventMoved ? "Timing updated" : "Change timing"}</button></div>{eventMoved && <div className="impact-banner"><span className="impact-icon"><Icon name="sparkle" size={18}/></span><div><b>Event Impact Agent found 87 affected attendees</b><p>The time changed from 4:00 PM to 5:00 PM. Review the drafted update before sending.</p></div><button onClick={onImpact}>Review draft <Icon name="arrow" size={15}/></button></div>}<div className="metric-grid"><div><span>Registrations</span><b>327</b><small>+24 this week</small></div><div><span>Checked in</span><b>281</b><small>86% attendance</small></div><div><span>Pending</span><b>46</b><small>Includes no-shows</small></div><div><span>Capacity</span><b>500</b><small>173 spots left</small></div></div><div className="host-panels"><div className="registrations-panel"><div className="panel-title"><div><h3>Recent registrations</h3><p>Internal registration · 327 total</p></div><button>Export CSV</button></div>{[["Maya Chen", "MC", "orange", "Registered 2 min ago", "Checked in"], ["Nikhil Varma", "NV", "teal", "Registered 18 min ago", "Registered"], ["Riya Sharma", "RS", "pink", "Registered 33 min ago", "Registered"]].map(([name, initials, shade, date, status]) => <div className="registration-row" key={name}>{avatar(initials, shade)}<div><b>{name}</b><small>{date}</small></div><span className={status === "Checked in" ? "check-status" : "register-status"}>{status === "Checked in" && <Icon name="check" size={13}/>} {status}</span></div>)}</div><div className="checkin-panel"><div className="scanner-corner tl"/><div className="scanner-corner tr"/><div className="scanner-corner bl"/><div className="scanner-corner br"/><div className="scan-symbol">▦</div><h3>Check in attendees</h3><p>Scan a BuildCircle QR pass to validate registration.</p><button className="dark-button" onClick={onCheckin}>Open QR scanner <Icon name="arrow" size={16}/></button><small>Camera access is requested only when you start scanning.</small></div></div><div className="marketing-row"><span className="impact-icon"><Icon name="wand" size={18}/></span><div><b>Event Marketing Agent</b><p>Generate a polished announcement, social caption, reminder or thank-you. You review every message before it goes out.</p></div><button className="outline-button" onClick={onImpact}>Create communications <Icon name="arrow" size={15}/></button></div></section>;
+}
+
+function NotificationsView({ onOpen }: { onOpen: () => void }) {
+  return <div className="page-content simple-page"><div className="simple-heading"><p className="eyebrow">YOUR UPDATES</p><h1>Notifications</h1><p>Only the activity that needs your attention.</p></div><div className="notifications-list">{[["Maya Chen", "mentioned you in #Help", "Could @Arjun Nair share the Docker setup you used?", "7 min", "orange"], ["AI Agents", "accepted your registration", "Your QR pass for Build your first AI agent is ready.", "34 min", "teal"], ["Alina Brooks", "replied to your project", "This trace view would be brilliant as a VS Code panel.", "1 hr", "pink"], ["Codex Builders", "posted an announcement", "September build night RSVP is now open.", "3 hr", "violet"]].map(([name, action, text, time, shade], index) => <button className={`notice ${index < 2 ? "unread" : ""}`} key={text} onClick={onOpen}>{avatar(name, shade)}<div><p><b>{name}</b> {action}</p><span>{text}</span><small>{time} ago</small></div>{index < 2 && <i/>}</button>)}</div></div>;
+}
+
+const initialProfile: UserProfile = {
+  name: "Arjun Nair",
+  bio: "Developer, community operator and relentless prototype-maker.",
+  location: "Kochi, India",
+  role: "Freelancer",
+  website: "arjun.build",
+};
+
+function ProfileView() {
+  const [profile, setProfile] = useState<UserProfile>(initialProfile);
+  const [dialog, setDialog] = useState<ProfileDialogType>(null);
+  const [projectName, setProjectName] = useState<ProjectName>("Signalboard");
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    const savedProfile = window.localStorage.getItem("buildcircle-profile");
+    if (!savedProfile) return;
+    try {
+      setProfile({ ...initialProfile, ...(JSON.parse(savedProfile) as Partial<UserProfile>) });
+    } catch {
+      window.localStorage.removeItem("buildcircle-profile");
+    }
+  }, []);
+
+  const saveProfile = (nextProfile: UserProfile) => {
+    setProfile(nextProfile);
+    window.localStorage.setItem("buildcircle-profile", JSON.stringify(nextProfile));
+    setSaved(true);
+    window.setTimeout(() => setSaved(false), 2800);
+  };
+
+  return <div className="page-content profile-page"><section className="profile-hero"><div className="profile-cover"><span className="profile-orb one"/><span className="profile-orb two"/></div><div className="profile-core">{avatar(profile.name, "violet")}<div><p className="eyebrow">BUILDER PROFILE</p><h1>{profile.name} <span className="verified">✓</span></h1><p>{profile.bio}</p><div className="profile-meta"><span>⌖ {profile.location}</span><span>◈ {profile.role}</span><span>↗ {profile.website}</span></div></div><button className="outline-button" onClick={() => setDialog("edit")}>Edit profile</button></div></section>{saved && <p className="profile-saved"><Icon name="check" size={15}/> Profile saved</p>}<div className="profile-grid"><section><div className="section-title"><div><p className="eyebrow">ABOUT</p><h2>Building in public, thoughtfully.</h2></div></div><p className="profile-bio">I care about the bridge between an experimental idea and a useful, humane product. Currently exploring practical AI, developer experience and communities that help people ship.</p><div className="profile-tags"><span>AI agents</span><span>TypeScript</span><span>Next.js</span><span>Product design</span><span>Community</span></div><div className="section-title lower"><div><p className="eyebrow">PROJECTS</p><h2>Things I’m building</h2></div><button className="text-button" onClick={() => setDialog("projects")}>View all <Icon name="arrow" size={15}/></button></div><div className="profile-project"><span>◫</span><div><b>Signalboard</b><p>A calmer shared context layer for community teams.</p></div><button aria-label="Open Signalboard" onClick={() => { setProjectName("Signalboard"); setDialog("project"); }}><Icon name="arrow" size={16}/></button></div></section><aside><p className="eyebrow">YOUR CIRCLES</p><button className="profile-community profile-community-button" onClick={() => setDialog("circles")}><MiniLogo color="teal"/><div><b>AI Agents</b><small>Member since Jul 2026</small></div><Icon name="chevron" size={16}/></button><button className="profile-community profile-community-button" onClick={() => setDialog("circles")}><MiniLogo color="violet"/><div><b>Codex Builders</b><small>Member since May 2026</small></div><Icon name="chevron" size={16}/></button><button className="outline-button wide" onClick={() => setDialog("edit")}>Manage your profile</button></aside></div>{dialog && <ProfileDialog type={dialog} profile={profile} projectName={projectName} save={saveProfile} close={() => setDialog(null)} openProject={(nextProject) => { setProjectName(nextProject); setDialog("project"); }}/>}</div>;
+}
+
+function ProfileDialog({ type, profile, projectName, save, close, openProject }: { type: Exclude<ProfileDialogType, null>; profile: UserProfile; projectName: ProjectName; save: (profile: UserProfile) => void; close: () => void; openProject: (project: ProjectName) => void }) {
+  const submitProfile = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    save({
+      name: String(data.get("name") || profile.name).trim(),
+      bio: String(data.get("bio") || profile.bio).trim(),
+      location: String(data.get("location") || profile.location).trim(),
+      role: String(data.get("role") || profile.role).trim(),
+      website: String(data.get("website") || profile.website).trim(),
+    });
+    close();
+  };
+
+  const content = type === "edit" ? <form className="profile-edit-modal" onSubmit={submitProfile}><p className="eyebrow">YOUR PROFILE</p><h2>Edit profile</h2><p>These details appear across BuildCircle and are saved on this device.</p><label>DISPLAY NAME<input name="name" defaultValue={profile.name} required/></label><label>BIO<textarea name="bio" defaultValue={profile.bio} required/></label><div className="form-row"><label>LOCATION<input name="location" defaultValue={profile.location} required/></label><label>ROLE<input name="role" defaultValue={profile.role} required/></label></div><label>WEBSITE<input name="website" defaultValue={profile.website} required/></label><div className="profile-dialog-actions"><button className="outline-button" type="button" onClick={close}>Cancel</button><button className="dark-button" type="submit">Save changes <Icon name="check" size={16}/></button></div></form> : type === "projects" ? <div className="profile-projects-modal"><p className="eyebrow">YOUR PROJECTS</p><h2>Things you’re building</h2><button className="project-dialog-card" onClick={() => openProject("Signalboard")}><span>◫</span><div><b>Signalboard</b><p>A calmer shared context layer for community teams.</p></div><Icon name="arrow" size={16}/></button><button className="project-dialog-card" onClick={() => openProject("Field Notes")}><span>✦</span><div><b>Field Notes</b><p>A lightweight research journal for product teams.</p></div><Icon name="arrow" size={16}/></button><button className="outline-button wide" onClick={close}>Done</button></div> : type === "project" ? <div className="project-details-modal"><p className="eyebrow">PROJECT</p><h2>{projectName}</h2><p>{projectName === "Signalboard" ? "A calmer shared context layer for community teams. It gathers updates, decisions and open questions into a shared weekly view." : "A lightweight research journal for product teams, turning interview notes into useful, shareable evidence."}</p><div className="project-detail-list"><span><Icon name="people" size={16}/> 4 collaborators</span><span><Icon name="check" size={16}/> Updated today</span></div><button className="dark-button wide" onClick={close}>Back to profile <Icon name="arrow" size={16}/></button></div> : <div className="profile-circles-modal"><p className="eyebrow">YOUR CIRCLES</p><h2>Communities you follow</h2><div className="circle-dialog-row"><MiniLogo color="teal"/><div><b>AI Agents</b><p>8,432 members · 18 new posts</p></div></div><div className="circle-dialog-row"><MiniLogo color="violet"/><div><b>Codex Builders</b><p>12,800 members · Workshop tomorrow</p></div></div><button className="outline-button wide" onClick={close}>Done</button></div>;
+
+  return <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={close}><section className="modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={close} aria-label="Close profile dialog"><Icon name="close" size={19}/></button>{content}</section></div>;
+}
+
+function SearchResults({ query, onNavigate }: { query: string; onNavigate: (page: Page) => void }) {
+  const term = query || "ESP32 GPS";
+  return <div className="search-results"><p><Icon name="sparkle" size={14}/> Search across BuildCircle</p><button onClick={() => onNavigate("explore")}><MiniLogo color="orange"/><span><small>COMMUNITY</small><b>IoT Builders</b><em>ESP32, GPS, sensors</em></span><Icon name="chevron" size={15}/></button><button onClick={() => onNavigate("community")}><span className="search-hash">#</span><span><small>DISCUSSION</small><b>GPS tracker with ESP32-C3</b><em>IoT Builders · #help</em></span><Icon name="chevron" size={15}/></button><button onClick={() => onNavigate("events")}><span className="search-calendar">21</span><span><small>EVENT</small><b>Build your first AI agent</b><em>Saturday · Online</em></span><Icon name="chevron" size={15}/></button><footer>Press <kbd>↵</kbd> to see all results for “{term}”</footer></div>;
+}
+
+function ModalLayer({ type, close, registered, checkedIn, eventMoved, onNavigate, onRegister, onCheckin, onMove, onShowcase }: { type: Modal; close: () => void; registered: boolean; checkedIn: boolean; eventMoved: boolean; onNavigate: (target: DigestDestination) => void; onRegister: () => void; onCheckin: () => void; onMove: () => void; onShowcase: () => void }) {
+  return <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={close}><section className={`modal ${type === "digest" || type === "impact" ? "modal-wide" : ""}`} onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={close}><Icon name="close" size={19}/></button>{type === "create" && <CreateModal close={close}/>} {type === "register" && <RegisterModal onRegister={onRegister}/>} {type === "pass" && <PassModal registered={registered} close={close}/>} {type === "checkin" && <CheckinModal checkedIn={checkedIn} onCheckin={onCheckin}/>} {type === "digest" && <DigestModal close={close} onNavigate={onNavigate}/>} {type === "impact" && <ImpactModal eventMoved={eventMoved} onMove={onMove} close={close}/>} {type === "showcase" && <ShowcaseModal publish={onShowcase}/>} {type === "membership" && <MembershipModal close={close}/>}</section></div>;
+}
+
+function MembershipModal({ close }: { close: () => void }) {
+  const [query, setQuery] = useState("");
+  const members = [
+    { name: "Arjun Nair", role: "Member", note: "You", shade: "violet" },
+    { name: "Maya Chen", role: "Owner", note: "ML Engineer", shade: "orange" },
+    { name: "Ishaan Rao", role: "Moderator", note: "Developer advocate", shade: "teal" },
+    { name: "Alina Brooks", role: "Member", note: "Product designer", shade: "pink" },
+    { name: "Leena Thomas", role: "Event Manager", note: "Community builder", shade: "blue" },
+    { name: "Rahul K", role: "Member", note: "Independent builder", shade: "yellow" },
+  ];
+  const visible = members.filter((member) => member.name.toLowerCase().includes(query.toLowerCase()) || member.role.toLowerCase().includes(query.toLowerCase()));
+  return <div className="membership-modal member-directory"><div className="membership-hero"><MiniLogo color="teal"/><div><p className="eyebrow">AI AGENTS</p><h2>Community members</h2><p>8,432 builders learning and shipping together</p></div></div><label className="member-search"><Icon name="search" size={16}/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find a member"/></label><div className="member-directory-meta"><span>{query ? `${visible.length} matches` : "People active this week"}</span><span>Role</span></div><div className="member-list">{visible.map((member) => <div className="member-row" key={member.name}>{avatar(member.name, member.shade)}<div><b>{member.name}</b><small>{member.note}</small></div><span className={`role-badge ${member.role.toLowerCase().replace(" ", "-")}`}>{member.role}</span></div>)}{visible.length === 0 && <p className="member-empty">No members match “{query}”.</p>}</div><div className="membership-footer"><span>Showing active community members</span><button className="outline-button" onClick={close}>Done</button></div></div>;
+}
+
+function CreateModal({ close }: { close: () => void }) {
+  const [mode, setMode] = useState<"community" | "event">("community");
+  return <div className="create-modal"><p className="eyebrow">START SOMETHING MEANINGFUL</p><h2>Create a {mode}</h2><div className="segmented"><button className={mode === "community" ? "active" : ""} onClick={() => setMode("community")}><Icon name="people" size={17}/> Community</button><button className={mode === "event" ? "active" : ""} onClick={() => setMode("event")}><Icon name="calendar" size={17}/> Event</button></div><label>NAME<input placeholder={mode === "community" ? "e.g. Creative Coders Chennai" : "e.g. Build night #1"}/></label><label>{mode === "community" ? "WHAT WILL PEOPLE BUILD OR LEARN HERE?" : "A SHORT DESCRIPTION"}<textarea placeholder={mode === "community" ? "Give your future members a clear, inviting reason to join." : "What’s special about this gathering?"}/></label>{mode === "community" ? <><label>CATEGORY<select defaultValue=""><option value="" disabled>Choose a category</option><option>AI & machine learning</option><option>Software development</option><option>Design & UX</option><option>Hardware & IoT</option></select></label><label>JOIN MODE<div className="radio-options"><button className="selected"><span>●</span><div><b>Public</b><small>Anyone can join instantly</small></div></button><button><span>○</span><div><b>Approval required</b><small>Review every request</small></div></button></div></label></> : <label>WHEN<input type="datetime-local"/></label>}<button className="dark-button wide" onClick={close}>Create {mode} <Icon name="arrow" size={16}/></button></div>;
+}
+
+function RegisterModal({ onRegister }: { onRegister: () => void }) {
+  const [submitted, setSubmitted] = useState(false);
+  const submit = (event: FormEvent) => { event.preventDefault(); setSubmitted(true); window.setTimeout(onRegister, 1800); };
+  if (submitted) return <div className="success-state"><span className="success-orb"><Icon name="check" size={35}/></span><p className="eyebrow">YOU’RE ON THE LIST</p><h2>Registration confirmed.</h2><p>We’re creating your individual QR pass now.</p><div className="loading-line"><i/></div></div>;
+  return <form className="register-modal" onSubmit={submit}><span className="pill live">FREE WORKSHOP · ONLINE</span><h2>Build your first AI agent</h2><p>Saturday, September 21 · 4:00–6:00 PM IST</p><div className="form-row"><label>NAME<input defaultValue="Arjun Nair" required/></label><label>EMAIL<input type="email" defaultValue="arjun@buildcircle.dev" required/></label></div><label>COLLEGE OR COMPANY<input placeholder="e.g. Independent builder"/></label><label>WHAT DO YOU WANT TO LEARN?<select defaultValue=""><option value="" disabled>Select one</option><option>Agent foundations</option><option>Tools and function calling</option><option>Evaluation and deployment</option></select></label><p className="form-note"><Icon name="lock" size={14}/> Your registration details are only shared with this event’s hosts.</p><button className="dark-button wide" type="submit">Confirm registration <Icon name="arrow" size={16}/></button></form>;
+}
+
+function PassModal({ registered, close }: { registered: boolean; close: () => void }) {
+  const [qr, setQr] = useState("");
+  useEffect(() => { QRCode.toDataURL("buildcircle://event/AI-AGENTS-2026/BC-AGT-9X2A", { margin: 1, width: 210, color: { dark: "#161625", light: "#ffffff" } }).then(setQr); }, []);
+  return <div className="pass-modal"><div className="pass-top"><PlatformLogo className="pass-logo"/><span>buildcircle</span><em>EVENT PASS</em></div><div className="pass-community"><MiniLogo color="teal"/> AI Agents</div><h2>Build your first<br/><em>AI agent</em></h2><div className="pass-info"><div><small>WHEN</small><b>Sat, Sep 21 · 4:00 PM</b></div><div><small>WHERE</small><b>Online · Live workshop</b></div></div><div className="qr-card">{qr ? <img src={qr} alt="Event check-in QR code"/> : <div className="qr-placeholder">Generating pass...</div>}<div><small>BUILDERCIRCLE PASS</small><b>BC-AGT-9X2A</b><p>Present this QR at check-in.</p></div></div><div className="pass-person">{avatar("Arjun Nair", "violet")}<div><b>Arjun Nair</b><small>Registered builder</small></div><span className="pass-valid"><Icon name="check" size={14}/> VALID</span></div><button className="outline-button wide" onClick={close}>{registered ? "Done" : "Preview pass"}</button></div>;
+}
+
+function CheckinModal({ checkedIn, onCheckin }: { checkedIn: boolean; onCheckin: () => void }) {
+  const [scanned, setScanned] = useState(checkedIn);
+  const scan = () => { setScanned(true); };
+  return <div className="checkin-modal">{!scanned ? <><p className="eyebrow">EVENT HOST CONSOLE</p><h2>Scan QR pass</h2><div className="camera"><div className="camera-noise"/><div className="scan-frame"><i/><i/><i/><i/></div><p>Point the camera at a BuildCircle event pass.</p></div><button className="dark-button wide" onClick={scan}>Use demo QR pass <Icon name="arrow" size={16}/></button><p className="form-note center">Use the demo pass to validate Arjun Nair’s registration.</p></> : <><div className="valid-mark"><Icon name="check" size={35}/></div><p className="eyebrow">PASS VALID</p><h2>Arjun Nair</h2><p className="checkin-id">Registration ID · BC-AGT-9X2A</p><div className="valid-event"><MiniLogo color="teal"/><div><b>Build your first AI agent</b><small>Saturday · 4:00 PM · Online</small></div></div>{checkedIn ? <button className="registered-button wide"><Icon name="check" size={16}/> Checked in at 3:54 PM</button> : <button className="dark-button wide" onClick={onCheckin}>Check in attendee <Icon name="check" size={16}/></button>}<p className="form-note center">Each pass can be checked in only once.</p></>}</div>;
+}
+
+function DigestModal({ close, onNavigate }: { close: () => void; onNavigate: (target: DigestDestination) => void }) {
+  const [digest, setDigest] = useState<DigestPayload | null>(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/digest", { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Digest request failed");
+        return response.json() as Promise<DigestPayload>;
+      })
+      .then((payload) => {
+        if (!Array.isArray(payload.items) || !Array.isArray(payload.stats)) throw new Error("Invalid digest payload");
+        setDigest(payload);
+      })
+      .catch((requestError: unknown) => {
+        if (requestError instanceof DOMException && requestError.name === "AbortError") return;
+        setError(true);
+      });
+    return () => controller.abort();
+  }, []);
+
+  if (error) return <div className="digest-modal digest-loading"><span className="digest-glyph"><Icon name="sparkle" size={22}/></span><h2>Today’s digest is unavailable.</h2><p>Refresh the page and try again in a moment.</p><button className="outline-button wide" onClick={close}>Close</button></div>;
+  if (!digest) return <div className="digest-modal digest-loading"><span className="digest-glyph"><Icon name="sparkle" size={22}/></span><p className="eyebrow">TODAY’S DIGEST</p><h2>Finding the useful momentum…</h2><p>Checking your communities and upcoming events.</p></div>;
+
+  const sourceLabel = digest.source === "openai" ? "OpenAI-curated from community activity" : "Current community snapshot";
+  return <div className="digest-modal"><div className="digest-hero"><div><span className="digest-glyph"><Icon name="sparkle" size={22}/></span><p className="eyebrow">AI COMMUNITY DIGEST</p><h2>Your circles, <em>distilled.</em></h2><p>{digest.intro}</p></div><small>{new Date(digest.generatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })} · Today</small></div><p className="digest-source">{sourceLabel}</p>{digest.message && <p className="digest-notice">{digest.message}</p>}<div className="digest-stats">{digest.stats.map((stat) => <div key={stat.label}><b>{stat.value}</b><span>{stat.label}</span></div>)}</div><div className="digest-grid">{digest.items.map((item, index) => <article key={`${item.title}-${index}`}><span className={`digest-icon ${item.tone}`}><Icon name={item.icon} size={18}/></span><div><p className="eyebrow">{item.category}</p><h3>{item.title}</h3><p>{item.summary}</p><button onClick={() => onNavigate(item.destination)}>{item.action} <Icon name="arrow" size={14}/></button></div></article>)}</div><button className="outline-button wide" onClick={close}>Close today’s digest</button></div>;
+}
+
+function ImpactModal({ eventMoved, onMove, close }: { eventMoved: boolean; onMove: () => void; close: () => void }) {
+  const [channel, setChannel] = useState("announcement");
+  const [sent, setSent] = useState(false);
+  const generate = () => { if (!eventMoved) onMove(); };
+  return <div className="impact-modal"><div className="impact-top"><span className="impact-icon"><Icon name="sparkle" size={20}/></span><div><p className="eyebrow">EVENT IMPACT AGENT</p><h2>{eventMoved ? "Your change has a ripple." : "Plan your event communication."}</h2><p>{eventMoved ? "We mapped everyone who needs to know and prepared a clear update for you." : "Generate event messaging with one review step before anything goes out."}</p></div></div>{eventMoved ? <><div className="impact-count"><b>87</b><div><b>registered attendees affected</b><p>They registered for 4:00 PM. The workshop now begins at 5:00 PM.</p></div><span>● Ready to review</span></div><div className="impact-tabs"><button className={channel === "announcement" ? "active" : ""} onClick={() => setChannel("announcement")}>Community announcement</button><button className={channel === "email" ? "active" : ""} onClick={() => setChannel("email")}>Email update</button><button className={channel === "whatsapp" ? "active" : ""} onClick={() => setChannel("whatsapp")}>WhatsApp-ready</button></div><div className="draft-card"><div className="draft-head"><span>AI DRAFT · REVIEW BEFORE SENDING</span><button><Icon name="wand" size={15}/> Refine tone</button></div>{channel === "announcement" ? <><h3>Small timing update for Saturday’s AI agent workshop</h3><p>We’ve moved <b>Build your first AI agent</b> from <b>4:00 PM to 5:00 PM IST</b> this Saturday, September 21.</p><p>Everything else stays the same — it’s still a live, hands-on online workshop, and we can’t wait to build with you. Your registration is confirmed.</p><p>See you at 5!</p></> : channel === "email" ? <><h3>Your workshop start time has changed</h3><p>Hi there — a quick note that Saturday’s Build your first AI agent workshop will now start at <b>5:00 PM IST</b>, one hour later than planned.</p><p>Your spot remains confirmed. We hope the new time makes it even easier to join us.</p></> : <><h3>⚡ Workshop time update</h3><p>Build your first AI agent now starts at <b>5 PM IST</b> this Saturday (instead of 4 PM). Your registration is still confirmed — see you there!</p></>}</div><div className="impact-actions">{sent ? <span className="sent-confirm"><Icon name="check" size={16}/> Update sent to 87 attendees</span> : <button className="dark-button" onClick={() => setSent(true)}>Send to 87 attendees <Icon name="send" size={15}/></button>}<button className="outline-button" onClick={close}>Save as draft</button></div></> : <><div className="agent-options"><button onClick={generate}><Icon name="calendar" size={18}/><div><b>Communicate a change</b><small>Tell attendees about a time, venue or agenda update.</small></div><Icon name="arrow" size={17}/></button><button><Icon name="wand" size={18}/><div><b>Promote this event</b><small>Create a launch post, reminder or social caption.</small></div><Icon name="arrow" size={17}/></button></div></>}</div>;
+}
+
+function ShowcaseModal({ publish }: { publish: () => void }) {
+  return <form className="showcase-modal" onSubmit={(event) => { event.preventDefault(); publish(); }}><p className="eyebrow">#PROJECTS · AI AGENTS</p><h2>Share what you’re building</h2><p>Give it enough context for the right collaborators to find it.</p><label>PROJECT NAME<input placeholder="e.g. TraceView" required/></label><label>ONE-SENTENCE DESCRIPTION<input placeholder="What does it do, for whom?" required/></label><label>TECH STACK<input placeholder="e.g. Next.js, OpenAI, Supabase"/></label><label>PROJECT LINK<input type="url" placeholder="https://"/></label><button className="upload-drop" type="button"><Icon name="image" size={19}/><span>Add a cover image or demo</span><small>PNG, JPG, MP4 up to 10MB</small></button><button className="dark-button wide" type="submit">Publish showcase <Icon name="arrow" size={16}/></button></form>;
+}
