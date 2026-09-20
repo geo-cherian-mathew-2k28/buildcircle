@@ -15,6 +15,17 @@ type UserProfile = {
   role: string;
   website: string;
 };
+type NotificationItem = {
+  id: number;
+  actor: string;
+  action: string;
+  text: string;
+  time: string;
+  shade: string;
+  destination: Page;
+  communityName?: string;
+  channel?: string;
+};
 type Message = {
   id: number;
   user: string;
@@ -293,6 +304,8 @@ export default function BuildCircle() {
   const [toast, setToast] = useState("");
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [profile, setProfile] = useState<UserProfile>(initialProfile);
+  const [readNotificationIds, setReadNotificationIds] = useState<number[]>([]);
+  const [notificationsReady, setNotificationsReady] = useState(false);
 
   useEffect(() => {
     try {
@@ -308,6 +321,24 @@ export default function BuildCircle() {
       window.localStorage.removeItem("buildcircle-profile");
     }
   }, []);
+
+  useEffect(() => {
+    try {
+      const storedReadIds = window.localStorage.getItem("buildcircle-read-notifications");
+      if (storedReadIds) {
+        const parsedIds = JSON.parse(storedReadIds) as unknown;
+        if (Array.isArray(parsedIds)) setReadNotificationIds(parsedIds.filter((id): id is number => typeof id === "number"));
+      }
+    } catch {
+      window.localStorage.removeItem("buildcircle-read-notifications");
+    } finally {
+      setNotificationsReady(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (notificationsReady) window.localStorage.setItem("buildcircle-read-notifications", JSON.stringify(readNotificationIds));
+  }, [notificationsReady, readNotificationIds]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -380,6 +411,24 @@ export default function BuildCircle() {
   };
 
   const switchPage = (next: Page) => { setPage(next); setShowSearch(false); };
+  const notifications = useMemo<NotificationItem[]>(() => [
+    { id: 1, actor: "Maya Chen", action: "mentioned you in #Help", text: `Could @${profile.name} share the Docker setup you used?`, time: "7 min", shade: "orange", destination: "community", communityName: "AI Agents", channel: "help" },
+    { id: 2, actor: "AI Agents", action: "accepted your registration", text: "Your QR pass for Build your first AI agent is ready.", time: "34 min", shade: "teal", destination: "events" },
+    { id: 3, actor: "Alina Brooks", action: "replied to your project", text: "This trace view would be brilliant as a VS Code panel.", time: "1 hr", shade: "pink", destination: "community", communityName: "AI Agents", channel: "projects" },
+    { id: 4, actor: "Codex Builders", action: "posted an announcement", text: "September build night RSVP is now open.", time: "3 hr", shade: "violet", destination: "community", communityName: "Codex Builders", channel: "announcements" },
+  ], [profile.name]);
+  const unreadCount = notifications.filter((notification) => !readNotificationIds.includes(notification.id)).length;
+  const markNotificationsRead = (ids: number[]) => setReadNotificationIds((current) => [...new Set([...current, ...ids])]);
+  const openNotifications = () => { markNotificationsRead(notifications.map((notification) => notification.id)); switchPage("notifications"); };
+  const openNotification = (notification: NotificationItem) => {
+    markNotificationsRead([notification.id]);
+    if (notification.communityName) setActiveCommunityName(notification.communityName);
+    if (notification.channel) setChannel(notification.channel);
+    switchPage(notification.destination);
+  };
+  const openSearchCommunity = (name: string) => { setActiveCommunityName(name); setChannel("general"); switchPage("community"); setQuery(""); };
+  const openSearchDiscussion = (name: string, nextChannel: string) => { setActiveCommunityName(name); setChannel(nextChannel); switchPage("community"); setQuery(""); };
+  const openSearchEvents = () => { switchPage("events"); setQuery(""); };
   const join = (name: string) => {
     setJoined((items) => items.includes(name) ? items : [...items, name]);
     notify(`You joined ${name}`);
@@ -398,10 +447,10 @@ export default function BuildCircle() {
     if (page === "explore") return <ExploreView joined={joined} onJoin={join} onOpen={(name) => { setActiveCommunityName(name); setPage("community"); }} onCreate={() => setModal("create")} />;
     if (page === "events") return <EventsView registeredEvents={registeredEvents} eventMoved={eventMoved} wishlistedEvents={wishlistedEvents} onRegister={beginEventRegistration} onPass={openEventPass} onCheckin={() => setModal("checkin")} onImpact={() => setModal("impact")} onMove={() => { setEventMoved(true); notify("Event time updated — attendees are being reviewed"); }} onToggleWishlist={toggleWishlist} />;
     if (page === "calendar") return <CalendarView registeredEvents={registeredEvents} wishlistedEvents={wishlistedEvents} onOpenEvents={() => setPage("events")} onToggleWishlist={toggleWishlist} onViewPass={openEventPass} />;
-    if (page === "notifications") return <NotificationsView profile={profile} onOpen={() => setPage("community")} />;
+    if (page === "notifications") return <NotificationsView notifications={notifications} readNotificationIds={readNotificationIds} onOpen={openNotification} onMarkAllRead={() => markNotificationsRead(notifications.map((notification) => notification.id))} />;
     if (page === "profile") return <ProfileView profile={profile} onSave={saveProfile} />;
     return <HomeView profile={profile} onExplore={() => setPage("explore")} onCommunity={() => { setActiveCommunityName("AI Agents"); setPage("community"); }} onEvents={() => setPage("events")} onDigest={() => setModal("digest")} />;
-  }, [page, channel, channelMessages, draft, attached, attachedAudio, joined, registeredEvents, wishlistedEvents, eventMoved, activeCommunityName, profile]);
+  }, [page, channel, channelMessages, draft, attached, attachedAudio, joined, registeredEvents, wishlistedEvents, eventMoved, activeCommunityName, profile, notifications, readNotificationIds]);
 
   return (
     <main className="app-shell">
@@ -413,7 +462,7 @@ export default function BuildCircle() {
           <NavItem label="Communities" icon="people" active={page === "communities" || page === "community"} onClick={() => switchPage("communities")} />
           <NavItem label="Events" icon="calendar" active={page === "events"} onClick={() => switchPage("events")} />
           <NavItem label="Calendar" icon="calendar" active={page === "calendar"} onClick={() => switchPage("calendar")} />
-          <NavItem label="Notifications" icon="bell" active={page === "notifications"} count="3" onClick={() => switchPage("notifications")} />
+          <NavItem label="Notifications" icon="bell" active={page === "notifications"} count={unreadCount ? String(unreadCount) : undefined} onClick={openNotifications} />
         </nav>
         <div className="sidebar-spacer" />
         <button className="create-button" onClick={() => setModal("create")}><Icon name="plus" size={17}/> Create</button>
@@ -423,12 +472,12 @@ export default function BuildCircle() {
       <section className="main-area">
         <header className="topbar">
           <div className="mobile-brand"><PlatformLogo className="mobile-logo"/>buildcircle</div>
-          <div className="search-wrap">
-            <Icon name="search" size={17}/><input value={query} onChange={(e) => { setQuery(e.target.value); setShowSearch(true); }} onFocus={() => setShowSearch(true)} placeholder="Search communities, discussions, events..." />
-            <kbd>⌘ K</kbd>
-            {showSearch && <SearchResults query={query} onNavigate={(target) => { switchPage(target); setQuery(""); }} />}
+          <div className={`search-wrap ${showSearch ? "open" : ""}`}>
+            <Icon name="search" size={17}/><input value={query} onChange={(e) => { setQuery(e.target.value); setShowSearch(true); }} onFocus={() => setShowSearch(true)} onKeyDown={(event) => { if (event.key === "Escape") { setShowSearch(false); setQuery(""); event.currentTarget.blur(); } }} placeholder="Search communities, discussions, events..." aria-expanded={showSearch} aria-controls="platform-search-results" />
+            {showSearch ? <button className="search-close" type="button" aria-label="Close search" onClick={() => { setShowSearch(false); setQuery(""); }}><Icon name="close" size={15}/></button> : <kbd>⌘ K</kbd>}
+            {showSearch && <SearchResults query={query} onClose={() => { setShowSearch(false); setQuery(""); }} onOpenCommunity={openSearchCommunity} onOpenDiscussion={openSearchDiscussion} onOpenEvents={openSearchEvents} />}
           </div>
-          <div className="top-actions"><button className="icon-button" aria-label="Toggle theme" onClick={() => setTheme(theme === "light" ? "dark" : "light")}>{theme === "light" ? "◐" : "☼"}</button><button className="notification-dot" onClick={() => switchPage("notifications")}><Icon name="bell"/><i/></button>{avatar(profile.name, "violet")}</div>
+          <div className="top-actions"><button className="icon-button" aria-label="Toggle theme" onClick={() => setTheme(theme === "light" ? "dark" : "light")}>{theme === "light" ? "◐" : "☼"}</button><button className="notification-dot" aria-label={unreadCount ? `Notifications, ${unreadCount} unread` : "Notifications"} onClick={openNotifications}><Icon name="bell"/>{unreadCount > 0 && <i/>}</button>{avatar(profile.name, "violet")}</div>
         </header>
         {content}
       </section>
@@ -782,10 +831,10 @@ function HostDashboard({ eventMoved, onImpact, onMove, onCheckin }: { eventMoved
   return <section className="host-dashboard"><div className="host-heading"><div><span className="pill live">HOST CONSOLE</span><h2>Build your first AI agent</h2><p>Saturday, Sep 21 · {eventMoved ? "5:00 PM" : "4:00 PM"} IST · Online</p></div><button className="outline-button" onClick={onMove}><Icon name="calendar" size={16}/>{eventMoved ? "Timing updated" : "Change timing"}</button></div>{eventMoved && <div className="impact-banner"><span className="impact-icon"><Icon name="sparkle" size={18}/></span><div><b>Event Impact Agent found 87 affected attendees</b><p>The time changed from 4:00 PM to 5:00 PM. Review the drafted update before sending.</p></div><button onClick={onImpact}>Review draft <Icon name="arrow" size={15}/></button></div>}<div className="metric-grid"><div><span>Registrations</span><b>327</b><small>+24 this week</small></div><div><span>Checked in</span><b>281</b><small>86% attendance</small></div><div><span>Pending</span><b>46</b><small>Includes no-shows</small></div><div><span>Capacity</span><b>500</b><small>173 spots left</small></div></div><div className="host-panels"><div className="registrations-panel"><div className="panel-title"><div><h3>Recent registrations</h3><p>Internal registration · 327 total</p></div><button>Export CSV</button></div>{[["Maya Chen", "MC", "orange", "Registered 2 min ago", "Checked in"], ["Nikhil Varma", "NV", "teal", "Registered 18 min ago", "Registered"], ["Riya Sharma", "RS", "pink", "Registered 33 min ago", "Registered"]].map(([name, initials, shade, date, status]) => <div className="registration-row" key={name}>{avatar(initials, shade)}<div><b>{name}</b><small>{date}</small></div><span className={status === "Checked in" ? "check-status" : "register-status"}>{status === "Checked in" && <Icon name="check" size={13}/>} {status}</span></div>)}</div><div className="checkin-panel"><div className="scanner-corner tl"/><div className="scanner-corner tr"/><div className="scanner-corner bl"/><div className="scanner-corner br"/><div className="scan-symbol">▦</div><h3>Check in attendees</h3><p>Scan a BuildCircle QR pass to validate registration.</p><button className="dark-button" onClick={onCheckin}>Open QR scanner <Icon name="arrow" size={16}/></button><small>Camera access is requested only when you start scanning.</small></div></div><div className="marketing-row"><span className="impact-icon"><Icon name="wand" size={18}/></span><div><b>Event Marketing Agent</b><p>Generate a polished announcement, social caption, reminder or thank-you. You review every message before it goes out.</p></div><button className="outline-button" onClick={onImpact}>Create communications <Icon name="arrow" size={15}/></button></div></section>;
 }
 
-function NotificationsView({ profile, onOpen }: { profile: UserProfile; onOpen: () => void }) {
-  return <div className="page-content simple-page"><div className="simple-heading"><p className="eyebrow">YOUR UPDATES</p><h1>Notifications</h1><p>Only the activity that needs your attention.</p></div><div className="notifications-list">{[["Maya Chen", "mentioned you in #Help", `Could @${profile.name} share the Docker setup you used?`, "7 min", "orange"], ["AI Agents", "accepted your registration", "Your QR pass for Build your first AI agent is ready.", "34 min", "teal"], ["Alina Brooks", "replied to your project", "This trace view would be brilliant as a VS Code panel.", "1 hr", "pink"], ["Codex Builders", "posted an announcement", "September build night RSVP is now open.", "3 hr", "violet"]].map(([name, action, text, time, shade], index) => <button className={`notice ${index < 2 ? "unread" : ""}`} key={text} onClick={onOpen}>{avatar(name, shade)}<div><p><b>{name}</b> {action}</p><span>{text}</span><small>{time} ago</small></div>{index < 2 && <i/>}</button>)}</div></div>;
+function NotificationsView({ notifications, readNotificationIds, onOpen, onMarkAllRead }: { notifications: NotificationItem[]; readNotificationIds: number[]; onOpen: (notification: NotificationItem) => void; onMarkAllRead: () => void }) {
+  const unreadCount = notifications.filter((notification) => !readNotificationIds.includes(notification.id)).length;
+  return <div className="page-content simple-page"><div className="simple-heading notifications-heading"><div><p className="eyebrow">YOUR UPDATES</p><h1>Notifications</h1><p>{unreadCount ? `${unreadCount} update${unreadCount === 1 ? "" : "s"} need your attention.` : "You’re all caught up."}</p></div>{unreadCount > 0 && <button className="outline-button" onClick={onMarkAllRead}>Mark all as read <Icon name="check" size={15}/></button>}</div><div className="notifications-list">{notifications.map((notification) => { const isUnread = !readNotificationIds.includes(notification.id); return <button className={`notice ${isUnread ? "unread" : ""}`} key={notification.id} onClick={() => onOpen(notification)} aria-label={`${notification.actor} ${notification.action}. Open notification.`}>{avatar(notification.actor, notification.shade)}<div><p><b>{notification.actor}</b> {notification.action}</p><span>{notification.text}</span><small>{notification.time} ago</small></div>{isUnread && <i/>}</button>; })}</div></div>;
 }
-
 function ProfileView({ profile, onSave }: { profile: UserProfile; onSave: (profile: UserProfile) => void }) {
   const [dialog, setDialog] = useState<ProfileDialogType>(null);
   const [projectName, setProjectName] = useState<ProjectName>("Signalboard");
@@ -826,11 +875,23 @@ function ProfileDialog({ type, profile, projectName, save, close, openProject }:
 
   return <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={close}><section className="modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={close} aria-label="Close profile dialog"><Icon name="close" size={19}/></button>{content}</section></div>;
 }
-function SearchResults({ query, onNavigate }: { query: string; onNavigate: (page: Page) => void }) {
-  const term = query || "ESP32 GPS";
-  return <div className="search-results"><p><Icon name="sparkle" size={14}/> Search across BuildCircle</p><button onClick={() => onNavigate("explore")}><MiniLogo color="orange"/><span><small>COMMUNITY</small><b>IoT Builders</b><em>ESP32, GPS, sensors</em></span><Icon name="chevron" size={15}/></button><button onClick={() => onNavigate("community")}><span className="search-hash">#</span><span><small>DISCUSSION</small><b>GPS tracker with ESP32-C3</b><em>IoT Builders · #help</em></span><Icon name="chevron" size={15}/></button><button onClick={() => onNavigate("events")}><span className="search-calendar">21</span><span><small>EVENT</small><b>Build your first AI agent</b><em>Saturday · Online</em></span><Icon name="chevron" size={15}/></button><footer>Press <kbd>↵</kbd> to see all results for “{term}”</footer></div>;
+function SearchResults({ query, onClose, onOpenCommunity, onOpenDiscussion, onOpenEvents }: { query: string; onClose: () => void; onOpenCommunity: (name: string) => void; onOpenDiscussion: (name: string, channel: string) => void; onOpenEvents: () => void }) {
+  const term = query.trim().toLowerCase();
+  const hasTerm = Boolean(term);
+  const matches = (value: string) => !hasTerm || value.toLowerCase().includes(term);
+  const discussions = [
+    { title: "FastAPI deployment setup", summary: messagesSeed[0].body, community: "AI Agents", channel: "help", author: "Maya Chen" },
+    { title: "TraceView — make agent runs visible", summary: messagesSeed[2].body, community: "AI Agents", channel: "projects", author: "Alina Brooks" },
+    { title: "GPS tracker with ESP32-C3", summary: "A practical build thread about power budgets, sensor data, and offline sync.", community: "IoT Builders", channel: "help", author: "Ishaan Rao" },
+    { title: "Resource drop: evaluating tool-using agents", summary: channelSeeds.resources[0].body, community: "AI Agents", channel: "resources", author: "Ishaan Rao" },
+  ];
+  const communityMatches = communities.filter((community) => matches([community.name, community.description, community.category, ...community.tags].join(" "))).slice(0, 3);
+  const discussionMatches = discussions.filter((discussion) => matches([discussion.title, discussion.summary, discussion.community, discussion.channel, discussion.author].join(" "))).slice(0, 3);
+  const eventMatches = upcomingEvents.filter((event) => matches([event.title, event.community, event.location, event.type || ""].join(" "))).slice(0, 3);
+  const total = communityMatches.length + discussionMatches.length + eventMatches.length;
+  const quickCommunities = communities.slice(0, 3);
+  return <div className="search-results" id="platform-search-results" role="dialog" aria-label="Platform search results"><div className="search-results-head"><p><Icon name="sparkle" size={14}/>{hasTerm ? `${total} result${total === 1 ? "" : "s"} for “${query.trim()}”` : "Search across BuildCircle"}</p><button type="button" onClick={onClose} aria-label="Close search results"><Icon name="close" size={14}/></button></div>{!hasTerm ? <><div className="search-section"><small>EXPLORE</small>{quickCommunities.map((community) => <button key={community.name} onClick={() => onOpenCommunity(community.name)}><MiniLogo color={community.color}/><span><small>COMMUNITY</small><b>{community.name}</b><em>{community.category} · {community.members} members</em></span><Icon name="chevron" size={15}/></button>)}<button onClick={onOpenEvents}><span className="search-calendar">21</span><span><small>EVENTS</small><b>Browse upcoming events</b><em>Workshops, meetups, AMAs and labs</em></span><Icon name="chevron" size={15}/></button></div><footer>Type to search communities, discussions, people, tags, and events. Press <kbd>Esc</kbd> to close.</footer></> : total ? <>{communityMatches.length > 0 && <div className="search-section"><small>COMMUNITIES</small>{communityMatches.map((community) => <button key={community.name} onClick={() => onOpenCommunity(community.name)}><MiniLogo color={community.color}/><span><small>COMMUNITY</small><b>{community.name}</b><em>{community.description}</em></span><Icon name="chevron" size={15}/></button>)}</div>}{discussionMatches.length > 0 && <div className="search-section"><small>DISCUSSIONS</small>{discussionMatches.map((discussion) => <button key={discussion.title} onClick={() => onOpenDiscussion(discussion.community, discussion.channel)}><span className="search-hash">#</span><span><small>{discussion.community} · #{discussion.channel}</small><b>{discussion.title}</b><em>{discussion.summary}</em></span><Icon name="chevron" size={15}/></button>)}</div>}{eventMatches.length > 0 && <div className="search-section"><small>EVENTS</small>{eventMatches.map((event) => <button key={event.id} onClick={onOpenEvents}><span className="search-calendar">{event.date.slice(-2)}</span><span><small>{event.type || "EVENT"} · {event.location}</small><b>{event.title}</b><em>{event.community} · {event.time}</em></span><Icon name="chevron" size={15}/></button>)}</div>}<footer>Choose a result to open it. Press <kbd>Esc</kbd> to close.</footer></> : <div className="search-empty"><span className="search-hash">?</span><div><b>No matching content yet.</b><p>Try a community, topic, person, channel, or event name.</p></div><button onClick={onClose}>Clear search</button></div>}</div>;
 }
-
 function ModalLayer({ type, close, profile, registered, registrationEvent, checkedIn, eventMoved, onNavigate, onRegister, onCheckin, onMove, onShowcase, onCreate }: { type: Modal; close: () => void; profile: UserProfile; registered: boolean; registrationEvent: RegisteredEvent; checkedIn: boolean; eventMoved: boolean; onNavigate: (target: DigestDestination) => void; onRegister: () => void; onCheckin: () => void; onMove: () => void; onShowcase: (project: { name: string; description: string; image?: string }) => void; onCreate: (draft: { name: string; description: string; category: string; access: "public" | "approval" }) => void }) {
   return <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={close}><section className={`modal ${type === "digest" || type === "impact" ? "modal-wide" : ""}`} onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={close}><Icon name="close" size={19}/></button>{type === "create" && <CreateModal close={close} onCreate={onCreate}/>} {type === "register" && <RegisterModal event={registrationEvent} profile={profile} onRegister={onRegister}/>} {type === "pass" && <PassModal event={registrationEvent} profile={profile} registered={registered} close={close}/>} {type === "checkin" && <CheckinModal profile={profile} checkedIn={checkedIn} onCheckin={onCheckin}/>} {type === "digest" && <DigestModal close={close} onNavigate={onNavigate}/>} {type === "impact" && <ImpactModal eventMoved={eventMoved} onMove={onMove} close={close}/>} {type === "showcase" && <ShowcaseModal publish={onShowcase}/>} {type === "membership" && <MembershipModal profile={profile} close={close}/>}</section></div>;
 }
