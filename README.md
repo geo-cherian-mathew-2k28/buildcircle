@@ -63,7 +63,7 @@ The experience follows a natural loop:
 
 1. **Find your people** — discover communities by interest, join instantly when public, or request approval when private.
 2. **Build in context** — use purposeful channels, threads, announcements, projects, direct messages, and rich sharing without losing the community's identity.
-3. **Show up at the right time** — register for events, keep registrations and saved events in one calendar, and see reminder status alongside the plan.
+3. **Show up at the right time** — register for events, keep registrations and saved events in one calendar, and receive an in-app reminder one calendar day before an event begins.
 4. **Return without the catch-up tax** — let the AI Daily Digest explain what changed and point to three useful next actions.
 
 BuildCircle turns community participation from a stressful app-hopping routine into a focused daily rhythm.
@@ -74,7 +74,7 @@ BuildCircle turns community participation from a stressful app-hopping routine i
 | --- | --- |
 | Discord, WhatsApp, Telegram, event tools, and calendars all compete for attention | One member home for joining, requesting access to, creating, and moving between communities |
 | Endless chronological streams make it hard to know what matters | An AI Daily Digest turns the last visit into one clear summary and three linked actions |
-| Event details are separated from the conversations around them | Registration, QR passes, calendar planning, and reminder status live beside community activity |
+| Event details are separated from the conversations around them | Registration, QR passes, calendar planning, and a one-day-before in-app reminder live beside community activity |
 | Communities feel interchangeable | Every circle has its own rooms, people, announcements, event context, and moderation controls |
 | Members react late or burn out trying to keep up | Community Pulse and focused workflows make meaningful participation feel achievable |
 
@@ -103,7 +103,7 @@ BuildCircle turns community participation from a stressful app-hopping routine i
 ### Events, passes, and personal planning
 
 - Browse and filter events, register, and access a QR event pass.
-- Track registered and wishlisted events in a dedicated calendar with visible reminder status.
+- Track registered and wishlisted events in a dedicated calendar, with an in-app one-day-before reminder.
 - Select a date to see the events planned for that day, rather than searching through old chats.
 - Use the Event Operations Agent to prepare reviewable community, email, and in-app messaging drafts.
 
@@ -276,7 +276,7 @@ BuildCircle is a working deployed prototype focused on demonstrating the full me
 
 - Supabase Auth and row-level security for persistent identity and moderator approvals.
 - Persistent chat, media storage, real-time presence, and delivery-grade notifications.
-- A scheduled notification service for reliable one-day-before event reminders across devices.
+- Cross-device push/email reminder delivery built on top of the in-app day-before reminder.
 - A verified transactional-email provider for releasing host-approved event communication.
 - Community analytics, moderation audit logs, and richer event check-in tooling.
 - Final submission screenshots and a short pitch video.

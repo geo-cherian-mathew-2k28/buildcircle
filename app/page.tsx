@@ -260,6 +260,16 @@ const upcomingEvents: RegisteredEvent[] = [
   { id: "hardware-prototype-night", title: "Hardware Prototype Night", date: "2026-10-08", time: "6:00 PM IST", location: "Kochi · Hands-on lab", community: "IoT Builders", type: "Hardware lab", color: "orange" },
 ];
 
+const localCalendarDate = (value: string) => new Date(`${value}T12:00:00`);
+const reminderDateFor = (eventDate: string) => {
+  const date = localCalendarDate(eventDate);
+  date.setDate(date.getDate() - 1);
+  return date;
+};
+const isSameCalendarDay = (first: Date, second: Date) => first.getFullYear() === second.getFullYear() && first.getMonth() === second.getMonth() && first.getDate() === second.getDate();
+const reminderNotificationId = (eventId: string) => 50_000 + Array.from(eventId).reduce((total, character) => (total * 31 + character.charCodeAt(0)) % 40_000, 0);
+const reminderDateLabel = (event: RegisteredEvent) => new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(reminderDateFor(event.date));
+
 const communitySeedMessages = (communityName: string, channel: string): Message[] => {
   const topic = communityTopics[communityName] || { focus: "building", prompt: "What are you making this week?", project: "A new community project.", resource: "A useful reference for builders." };
   const base = Array.from(communityName).reduce((sum, character) => sum + character.charCodeAt(0), 0) * 10;
@@ -317,6 +327,9 @@ export default function BuildCircle() {
   const [profile, setProfile] = useState<UserProfile>(initialProfile);
   const [readNotificationIds, setReadNotificationIds] = useState<number[]>([]);
   const [notificationsReady, setNotificationsReady] = useState(false);
+  const [reminderClock, setReminderClock] = useState(() => new Date());
+  const [deliveredReminderIds, setDeliveredReminderIds] = useState<number[]>([]);
+  const [remindersReady, setRemindersReady] = useState(false);
 
   useEffect(() => {
     try {
@@ -350,6 +363,29 @@ export default function BuildCircle() {
   useEffect(() => {
     if (notificationsReady) window.localStorage.setItem("buildcircle-read-notifications", JSON.stringify(readNotificationIds));
   }, [notificationsReady, readNotificationIds]);
+
+  useEffect(() => {
+    try {
+      const storedReminderIds = window.localStorage.getItem("buildcircle-delivered-event-reminders");
+      if (storedReminderIds) {
+        const parsedIds = JSON.parse(storedReminderIds) as unknown;
+        if (Array.isArray(parsedIds)) setDeliveredReminderIds(parsedIds.filter((id): id is number => typeof id === "number"));
+      }
+    } catch {
+      window.localStorage.removeItem("buildcircle-delivered-event-reminders");
+    } finally {
+      setRemindersReady(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (remindersReady) window.localStorage.setItem("buildcircle-delivered-event-reminders", JSON.stringify(deliveredReminderIds));
+  }, [deliveredReminderIds, remindersReady]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setReminderClock(new Date()), 60_000);
+    return () => window.clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -422,12 +458,30 @@ export default function BuildCircle() {
   };
 
   const switchPage = (next: Page) => { setPage(next); setShowSearch(false); };
+  const scheduledEventReminders = useMemo<NotificationItem[]>(() => registeredEvents.filter((event) => isSameCalendarDay(reminderDateFor(event.date), reminderClock)).map((event) => ({
+    id: reminderNotificationId(event.id),
+    actor: event.community,
+    action: "reminds you about tomorrow's event",
+    text: `${event.title} starts ${event.time}. Your registration and QR pass are ready.`,
+    time: "Tomorrow",
+    shade: event.color || "teal",
+    destination: "calendar" as Page,
+  })), [registeredEvents, reminderClock]);
+  useEffect(() => {
+    if (!eventPlanReady || !remindersReady) return;
+    const undelivered = scheduledEventReminders.filter((reminder) => !deliveredReminderIds.includes(reminder.id));
+    if (!undelivered.length) return;
+    setDeliveredReminderIds((current) => [...new Set([...current, ...undelivered.map((reminder) => reminder.id)])]);
+    setToast(`Reminder: ${undelivered[0].text}`);
+    window.setTimeout(() => setToast(""), 2800);
+  }, [deliveredReminderIds, eventPlanReady, remindersReady, scheduledEventReminders]);
   const notifications = useMemo<NotificationItem[]>(() => [
+    ...scheduledEventReminders,
     { id: 1, actor: "Maya Chen", action: "mentioned you in #Help", text: `Could @${profile.name} share the Docker setup you used?`, time: "7 min", shade: "orange", destination: "community", communityName: "AI Agents", channel: "help" },
     { id: 2, actor: "AI Agents", action: "accepted your registration", text: "Your QR pass for Build your first AI agent is ready.", time: "34 min", shade: "teal", destination: "events" },
     { id: 3, actor: "Alina Brooks", action: "replied to your project", text: "This trace view would be brilliant as a VS Code panel.", time: "1 hr", shade: "pink", destination: "community", communityName: "AI Agents", channel: "projects" },
     { id: 4, actor: "Codex Builders", action: "posted an announcement", text: "September build night RSVP is now open.", time: "3 hr", shade: "violet", destination: "community", communityName: "Codex Builders", channel: "announcements" },
-  ], [profile.name]);
+  ], [profile.name, scheduledEventReminders]);
   const unreadCount = notifications.filter((notification) => !readNotificationIds.includes(notification.id)).length;
   const markNotificationsRead = (ids: number[]) => setReadNotificationIds((current) => [...new Set([...current, ...ids])]);
   const openNotifications = () => { markNotificationsRead(notifications.map((notification) => notification.id)); switchPage("notifications"); };
@@ -832,12 +886,16 @@ function CalendarView({ registeredEvents, wishlistedEvents, onOpenEvents, onTogg
   };
   const monthLabel = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" }).format(new Date(year, month - 1, 1));
   const formatDate = (date: string) => new Intl.DateTimeFormat(undefined, { weekday: "long", month: "short", day: "numeric" }).format(new Date(`${date}T12:00:00`));
-  return <div className="page-content calendar-page"><section className="calendar-page-hero"><div><p className="eyebrow">YOUR EVENT PLAN</p><h1>Calendar & wishlist</h1><p>Every event you registered for, plus the ones you want to come back to.</p></div><button className="dark-button" onClick={onOpenEvents}><Icon name="compass" size={16}/> Discover events</button></section><div className="calendar-stat-row"><span><Icon name="check" size={15}/><b>{registeredEvents.length}</b> registered</span><span><Icon name="heart" size={15}/><b>{wishlistedEvents.length}</b> wishlisted</span><span><Icon name="bell" size={15}/> Reminders are set for your registrations</span></div><section className="calendar-page-grid"><div className="calendar-board"><div className="calendar-board-head"><button onClick={() => changeMonth(-1)} aria-label="Previous month">‹</button><h2>{monthLabel}</h2><button onClick={() => changeMonth(1)} aria-label="Next month">›</button></div><div className="calendar-weekdays">{"SMTWTFS".split("").map((day, index) => <span key={`${day}-${index}`}>{day}</span>)}</div><div className="calendar-grid calendar-grid-large">{Array.from({ length: startsOn }, (_, index) => <span className="calendar-empty" key={`blank-${index}`}/>) }{Array.from({ length: daysInMonth }, (_, index) => { const day = index + 1; const date = `${activeMonth}-${String(day).padStart(2, "0")}`; const dayEvents = allEvents.filter((event) => event.date === date); return <button key={date} className={`${selectedDate === date ? "selected" : ""} ${dayEvents.length ? "has-event" : ""}`} aria-pressed={selectedDate === date} onClick={() => setSelectedDate(date)}><b>{day}</b>{dayEvents.length > 0 && <span>{dayEvents.length}</span>}</button>; })}</div></div><aside className="calendar-day-panel"><p className="eyebrow">ON {formatDate(selectedDate).toUpperCase()}</p><h2>{selectedEvents.length ? `${selectedEvents.length} planned event${selectedEvents.length === 1 ? "" : "s"}` : "Nothing planned"}</h2>{selectedEvents.length ? selectedEvents.map((event) => { const isRegistered = registeredEvents.some((registeredEvent) => registeredEvent.id === event.id); return <article className={`calendar-day-card ${isRegistered ? "registered" : "wishlisted"}`} key={event.id}><span className="calendar-card-status">{isRegistered ? <><Icon name="check" size={13}/> Registered</> : <><Icon name="heart" size={13}/> Wishlisted</>}</span><h3>{event.title}</h3><p>{event.time}</p><small>{event.location}</small>{!isRegistered && <button onClick={() => onToggleWishlist(event)}>Remove from wishlist</button>}</article>; }) : <p className="calendar-empty-day">Choose a highlighted date or save an event from the Events page.</p>}</aside></section><section className="event-plan-section"><div className="section-title"><div><p className="eyebrow">UP NEXT</p><h2>Registered events</h2></div><span>{registeredEvents.length} confirmed</span></div>{registeredEvents.length ? <div className="event-plan-list">{registeredEvents.map((event) => <EventPlanRow event={event} status="registered" key={event.id} onViewPass={() => onViewPass(event)}/>)}</div> : <div className="event-plan-empty"><Icon name="calendar" size={21}/><div><b>No registrations yet</b><p>When you register, the event and its reminders appear here.</p></div><button className="outline-button" onClick={onOpenEvents}>Explore events</button></div>}</section><section className="event-plan-section"><div className="section-title"><div><p className="eyebrow">SAVE FOR LATER</p><h2>Your wishlist</h2></div><span>{wishlistedEvents.length} saved</span></div>{wishlistedEvents.length ? <div className="event-plan-list">{wishlistedEvents.map((event) => <EventPlanRow event={event} status="wishlisted" key={event.id} onRemove={() => onToggleWishlist(event)}/>)}</div> : <div className="event-plan-empty"><Icon name="heart" size={21}/><div><b>Your wishlist is ready</b><p>Use Save on any upcoming event and it will appear here.</p></div><button className="outline-button" onClick={onOpenEvents}>Browse events</button></div>}</section></div>;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const nextReminderEvent = [...registeredEvents].filter((event) => reminderDateFor(event.date).getTime() >= today.getTime()).sort((first, second) => first.date.localeCompare(second.date))[0];
+  const reminderStatus = nextReminderEvent ? `1-day reminder · ${reminderDateLabel(nextReminderEvent)}` : registeredEvents.length ? "1-day reminders active" : "1-day reminders start after registration";
+  return <div className="page-content calendar-page"><section className="calendar-page-hero"><div><p className="eyebrow">YOUR EVENT PLAN</p><h1>Calendar & wishlist</h1><p>Every event you registered for, plus the ones you want to come back to.</p></div><button className="dark-button" onClick={onOpenEvents}><Icon name="compass" size={16}/> Discover events</button></section><div className="calendar-stat-row"><span><Icon name="check" size={15}/><b>{registeredEvents.length}</b> registered</span><span><Icon name="heart" size={15}/><b>{wishlistedEvents.length}</b> wishlisted</span><span><Icon name="bell" size={15}/> {reminderStatus}</span></div><section className="calendar-page-grid"><div className="calendar-board"><div className="calendar-board-head"><button onClick={() => changeMonth(-1)} aria-label="Previous month">‹</button><h2>{monthLabel}</h2><button onClick={() => changeMonth(1)} aria-label="Next month">›</button></div><div className="calendar-weekdays">{"SMTWTFS".split("").map((day, index) => <span key={`${day}-${index}`}>{day}</span>)}</div><div className="calendar-grid calendar-grid-large">{Array.from({ length: startsOn }, (_, index) => <span className="calendar-empty" key={`blank-${index}`}/>) }{Array.from({ length: daysInMonth }, (_, index) => { const day = index + 1; const date = `${activeMonth}-${String(day).padStart(2, "0")}`; const dayEvents = allEvents.filter((event) => event.date === date); return <button key={date} className={`${selectedDate === date ? "selected" : ""} ${dayEvents.length ? "has-event" : ""}`} aria-pressed={selectedDate === date} onClick={() => setSelectedDate(date)}><b>{day}</b>{dayEvents.length > 0 && <span>{dayEvents.length}</span>}</button>; })}</div></div><aside className="calendar-day-panel"><p className="eyebrow">ON {formatDate(selectedDate).toUpperCase()}</p><h2>{selectedEvents.length ? `${selectedEvents.length} planned event${selectedEvents.length === 1 ? "" : "s"}` : "Nothing planned"}</h2>{selectedEvents.length ? selectedEvents.map((event) => { const isRegistered = registeredEvents.some((registeredEvent) => registeredEvent.id === event.id); return <article className={`calendar-day-card ${isRegistered ? "registered" : "wishlisted"}`} key={event.id}><span className="calendar-card-status">{isRegistered ? <><Icon name="check" size={13}/> Registered</> : <><Icon name="heart" size={13}/> Wishlisted</>}</span><h3>{event.title}</h3><p>{event.time}</p><small>{event.location}</small>{!isRegistered && <button onClick={() => onToggleWishlist(event)}>Remove from wishlist</button>}</article>; }) : <p className="calendar-empty-day">Choose a highlighted date or save an event from the Events page.</p>}</aside></section><section className="event-plan-section"><div className="section-title"><div><p className="eyebrow">UP NEXT</p><h2>Registered events</h2></div><span>{registeredEvents.length} confirmed</span></div>{registeredEvents.length ? <div className="event-plan-list">{registeredEvents.map((event) => <EventPlanRow event={event} status="registered" key={event.id} onViewPass={() => onViewPass(event)}/>)}</div> : <div className="event-plan-empty"><Icon name="calendar" size={21}/><div><b>No registrations yet</b><p>When you register, the event and its one-day reminder appear here.</p></div><button className="outline-button" onClick={onOpenEvents}>Explore events</button></div>}</section><section className="event-plan-section"><div className="section-title"><div><p className="eyebrow">SAVE FOR LATER</p><h2>Your wishlist</h2></div><span>{wishlistedEvents.length} saved</span></div>{wishlistedEvents.length ? <div className="event-plan-list">{wishlistedEvents.map((event) => <EventPlanRow event={event} status="wishlisted" key={event.id} onRemove={() => onToggleWishlist(event)}/>)}</div> : <div className="event-plan-empty"><Icon name="heart" size={21}/><div><b>Your wishlist is ready</b><p>Use Save on any upcoming event and it will appear here.</p></div><button className="outline-button" onClick={onOpenEvents}>Browse events</button></div>}</section></div>;
 }
 
 function EventPlanRow({ event, status, onRemove, onViewPass }: { event: RegisteredEvent; status: "registered" | "wishlisted"; onRemove?: () => void; onViewPass?: () => void }) {
   const dateLabel = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(new Date(`${event.date}T12:00:00`));
-  return <article className="event-plan-row"><span className={`event-plan-date ${status}`}><b>{dateLabel.split(" ")[1]}</b><small>{dateLabel.split(" ")[0]}</small></span><div><p><MiniLogo color={event.color || "teal"}/>{event.community}</p><h3>{event.title}</h3><span>{event.time} · {event.location}</span></div><em className={status}>{status === "registered" ? "Registered" : "Wishlisted"}</em>{onViewPass && <button className="event-row-pass" onClick={onViewPass}>View pass</button>}{onRemove && <button className="event-row-remove" onClick={onRemove}>Remove</button>}</article>;
+  return <article className="event-plan-row"><span className={`event-plan-date ${status}`}><b>{dateLabel.split(" ")[1]}</b><small>{dateLabel.split(" ")[0]}</small></span><div><p><MiniLogo color={event.color || "teal"}/>{event.community}</p><h3>{event.title}</h3><span>{event.time} · {event.location}</span>{status === "registered" && <small className="event-reminder-state"><Icon name="bell" size={12}/> 1-day reminder · {reminderDateLabel(event)}</small>}</div><em className={status}>{status === "registered" ? "Registered" : "Wishlisted"}</em>{onViewPass && <button className="event-row-pass" onClick={onViewPass}>View pass</button>}{onRemove && <button className="event-row-remove" onClick={onRemove}>Remove</button>}</article>;
 }
 
 function EventsView({ registeredEvents, eventMoved, wishlistedEvents, onRegister, onPass, onCheckin, onImpact, onMove, onToggleWishlist }: { registeredEvents: RegisteredEvent[]; eventMoved: boolean; wishlistedEvents: RegisteredEvent[]; onRegister: (event: RegisteredEvent) => void; onPass: (event: RegisteredEvent) => void; onCheckin: () => void; onImpact: () => void; onMove: () => void; onToggleWishlist: (event: RegisteredEvent) => void }) {
