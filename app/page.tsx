@@ -60,11 +60,22 @@ type DigestItem = {
   icon: "reply" | "sparkle" | "calendar" | "pin";
   tone: "teal" | "violet" | "orange" | "pink";
 };
+type DigestAction = {
+  label: string;
+  detail: string;
+  destination: DigestDestination;
+};
+type DigestBrief = {
+  headline: string;
+  summary: string;
+  actions: DigestAction[];
+};
 type DigestPayload = {
   generatedAt: string;
   intro: string;
   stats: { value: string; label: string }[];
   items: DigestItem[];
+  brief: DigestBrief;
   source: "openai" | "fallback" | "configuration";
   message?: string;
 };
@@ -988,6 +999,7 @@ function CheckinModal({ profile, checkedIn, onCheckin }: { profile: UserProfile;
 function DigestModal({ close, onNavigate }: { close: () => void; onNavigate: (target: DigestDestination) => void }) {
   const [digest, setDigest] = useState<DigestPayload | null>(null);
   const [error, setError] = useState(false);
+  const [view, setView] = useState<"brief" | "details">("brief");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -997,7 +1009,7 @@ function DigestModal({ close, onNavigate }: { close: () => void; onNavigate: (ta
         return response.json() as Promise<DigestPayload>;
       })
       .then((payload) => {
-        if (!Array.isArray(payload.items) || !Array.isArray(payload.stats)) throw new Error("Invalid digest payload");
+        if (!Array.isArray(payload.items) || !Array.isArray(payload.stats) || !payload.brief || !Array.isArray(payload.brief.actions)) throw new Error("Invalid digest payload");
         setDigest(payload);
       })
       .catch((requestError: unknown) => {
@@ -1011,9 +1023,8 @@ function DigestModal({ close, onNavigate }: { close: () => void; onNavigate: (ta
   if (!digest) return <div className="digest-modal digest-loading"><span className="digest-glyph"><Icon name="sparkle" size={22}/></span><p className="eyebrow">TODAY’S DIGEST</p><h2>Finding the useful momentum…</h2><p>Checking your communities and upcoming events.</p></div>;
 
   const sourceLabel = digest.source === "openai" ? "OpenAI-curated from community activity" : "Current community snapshot";
-  return <div className="digest-modal"><div className="digest-hero"><div><span className="digest-glyph"><Icon name="sparkle" size={22}/></span><p className="eyebrow">AI COMMUNITY DIGEST</p><h2>Your circles, <em>distilled.</em></h2><p>{digest.intro}</p></div><small>{new Date(digest.generatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })} · Today</small></div><p className="digest-source">{sourceLabel}</p>{digest.message && <p className="digest-notice">{digest.message}</p>}<div className="digest-stats">{digest.stats.map((stat) => <div key={stat.label}><b>{stat.value}</b><span>{stat.label}</span></div>)}</div><div className="digest-grid">{digest.items.map((item, index) => <article key={`${item.title}-${index}`}><span className={`digest-icon ${item.tone}`}><Icon name={item.icon} size={18}/></span><div><p className="eyebrow">{item.category}</p><h3>{item.title}</h3><p>{item.summary}</p><button onClick={() => onNavigate(item.destination)}>{item.action} <Icon name="arrow" size={14}/></button></div></article>)}</div><button className="outline-button wide" onClick={close}>Close today’s digest</button></div>;
+  return <div className="digest-modal"><div className="digest-hero"><div><span className="digest-glyph"><Icon name="sparkle" size={22}/></span><p className="eyebrow">AI COMMUNITY DIGEST</p><h2>Your circles, <em>distilled.</em></h2><p>{digest.intro}</p></div><small>{new Date(digest.generatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })} · Today</small></div><p className="digest-source">{sourceLabel}</p>{digest.message && <p className="digest-notice">{digest.message}</p>}<div className="digest-stats">{digest.stats.map((stat) => <div key={stat.label}><b>{stat.value}</b><span>{stat.label}</span></div>)}</div><div className="digest-view-toggle" role="tablist" aria-label="Digest detail level"><button role="tab" aria-selected={view === "brief"} className={view === "brief" ? "active" : ""} onClick={() => setView("brief")}><Icon name="sparkle" size={14}/> Quick brief</button><button role="tab" aria-selected={view === "details"} className={view === "details" ? "active" : ""} onClick={() => setView("details")}><Icon name="reply" size={14}/> All updates</button></div>{view === "brief" ? <section className="digest-brief"><div className="digest-brief-head"><span className="digest-brief-icon"><Icon name="sparkle" size={18}/></span><div><p className="eyebrow">YOUR ACTION PLAN</p><h3>{digest.brief.headline}</h3><p>{digest.brief.summary}</p></div></div><div className="digest-action-list">{digest.brief.actions.map((action, index) => <article key={`${action.label}-${index}`}><span className="digest-action-index">{index + 1}</span><div><b>{action.label}</b><p>{action.detail}</p></div><button onClick={() => onNavigate(action.destination)} aria-label={`${action.label}: open related area`}>Open <Icon name="arrow" size={13}/></button></article>)}</div><p className="digest-brief-note"><Icon name="check" size={14}/> Start here; the full updates are one tap away.</p></section> : <div className="digest-grid">{digest.items.map((item, index) => <article key={`${item.title}-${index}`}><span className={`digest-icon ${item.tone}`}><Icon name={item.icon} size={18}/></span><div><p className="eyebrow">{item.category}</p><h3>{item.title}</h3><p>{item.summary}</p><button onClick={() => onNavigate(item.destination)}>{item.action} <Icon name="arrow" size={14}/></button></div></article>)}</div>}<button className="outline-button wide" onClick={close}>Close today’s digest</button></div>;
 }
-
 function ImpactModal({ eventMoved, onMove, close }: { eventMoved: boolean; onMove: () => void; close: () => void }) {
   const [channel, setChannel] = useState<"announcement" | "email" | "inapp">("announcement");
   const [draft, setDraft] = useState<EventAgentPayload | null>(null);

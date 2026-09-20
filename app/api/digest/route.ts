@@ -14,6 +14,8 @@ type DigestItem = {
   icon: "reply" | "sparkle" | "calendar" | "pin";
   tone: "teal" | "violet" | "orange" | "pink";
 };
+type DigestAction = { label: string; detail: string; destination: Destination };
+type DigestBrief = { headline: string; summary: string; actions: DigestAction[] };
 type Community = { name: string; description: string | null; category: string | null };
 type Event = { title: string; starts_at: string; venue: string | null; kind: string | null };
 type Project = { name: string; description: string | null; created_at: string };
@@ -32,9 +34,33 @@ const seedSignals: CommunitySignals = {
 const openAiSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["intro", "items"],
+  required: ["intro", "brief", "items"],
   properties: {
     intro: { type: "string", minLength: 20, maxLength: 180 },
+    brief: {
+      type: "object",
+      additionalProperties: false,
+      required: ["headline", "summary", "actions"],
+      properties: {
+        headline: { type: "string", minLength: 8, maxLength: 84 },
+        summary: { type: "string", minLength: 30, maxLength: 220 },
+        actions: {
+          type: "array",
+          minItems: 3,
+          maxItems: 3,
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["label", "detail", "destination"],
+            properties: {
+              label: { type: "string", minLength: 3, maxLength: 60 },
+              detail: { type: "string", minLength: 12, maxLength: 160 },
+              destination: { type: "string", enum: ["community", "explore", "events"] },
+            },
+          },
+        },
+      },
+    },
     items: {
       type: "array",
       minItems: 3,
@@ -115,6 +141,41 @@ function fallbackItems(signals: CommunitySignals): DigestItem[] {
   ];
 }
 
+function fallbackBrief(signals: CommunitySignals): DigestBrief {
+  const community = signals.communities[0] || seedSignals.communities[0];
+  const project = signals.projects[0] || seedSignals.projects[0];
+  const event = signals.events[0] || seedSignals.events[0];
+  return {
+    headline: "Three useful moves for your builder day",
+    summary: "Start with the conversation that can unblock you, then review a fresh build and decide whether the next event belongs on your calendar.",
+    actions: [
+      { label: `Check ${community.name}`, detail: community.description || "Open the most active conversation and add one useful perspective.", destination: "community" },
+      { label: `Review ${project.name}`, detail: project.description || "A recent project is ready for focused feedback from builders.", destination: "explore" },
+      { label: `Decide on ${event.title}`, detail: `${event.venue || "Upcoming community event"} · review the details and choose whether to join.`, destination: "events" },
+    ],
+  };
+}
+
+function safeBrief(value: unknown, fallback: DigestBrief): DigestBrief {
+  if (!value || typeof value !== "object") return fallback;
+  const brief = value as Record<string, unknown>;
+  if (!Array.isArray(brief.actions) || brief.actions.length !== 3) return fallback;
+  const allowedDestinations = new Set<Destination>(["community", "explore", "events"]);
+  const actions = brief.actions.map((entry, index) => {
+    const action = entry && typeof entry === "object" ? entry as Record<string, unknown> : {};
+    const fallbackAction = fallback.actions[index];
+    return {
+      label: stringValue(action.label, fallbackAction.label, 60),
+      detail: stringValue(action.detail, fallbackAction.detail, 160),
+      destination: allowedDestinations.has(action.destination as Destination) ? action.destination as Destination : fallbackAction.destination,
+    };
+  });
+  return {
+    headline: stringValue(brief.headline, fallback.headline, 84),
+    summary: stringValue(brief.summary, fallback.summary, 220),
+    actions,
+  };
+}
 function extractOutputText(value: unknown) {
   if (!value || typeof value !== "object") return "";
   const response = value as { output_text?: unknown; output?: unknown };
@@ -128,11 +189,12 @@ function extractOutputText(value: unknown) {
   }).join("\n");
 }
 
-function responseFor(signals: CommunitySignals, source: "openai" | "fallback" | "configuration", intro?: string, items?: DigestItem[], message?: string) {
+function responseFor(signals: CommunitySignals, source: "openai" | "fallback" | "configuration", intro?: string, brief?: DigestBrief, items?: DigestItem[], message?: string) {
   const fallback = fallbackItems(signals);
   return {
     generatedAt: new Date().toISOString(),
     intro: intro || "A focused look at the projects, conversations and events moving through your builder circles.",
+    brief: brief || fallbackBrief(signals),
     stats: [
       { value: String(signals.communities.length), label: "communities" },
       { value: String(signals.projects.length), label: "projects" },
@@ -144,12 +206,11 @@ function responseFor(signals: CommunitySignals, source: "openai" | "fallback" | 
     ...(message ? { message } : {}),
   };
 }
-
 export async function GET() {
   const signals = await getSignals().catch(() => seedSignals);
   const apiKey = process.env.OPENAI_API_KEY?.trim();
   if (!apiKey) {
-    return NextResponse.json(responseFor(signals, "configuration", undefined, undefined, "Add OPENAI_API_KEY to .env.local to enable the AI-curated version."), { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json(responseFor(signals, "configuration", undefined, undefined, undefined, "Add OPENAI_API_KEY to .env.local to enable the AI-curated version."), { headers: { "Cache-Control": "no-store" } });
   }
 
   try {
@@ -161,20 +222,21 @@ export async function GET() {
       body: JSON.stringify({
         model,
         store: false,
-        instructions: "You create concise daily digests for a community platform. Use only the supplied public platform signals. Do not invent people, counts, registrations, dates, links, or capabilities. Keep the tone warm and practical. Each card must point to exactly one allowed in-app destination.",
+        reasoning: { effort: "low" },
+        instructions: "You create concise daily digests for a community platform. Use only the supplied public platform signals. Do not invent people, counts, registrations, dates, links, or capabilities. Keep the tone warm and practical. Return an at-a-glance brief that says what changed and exactly three clear next actions. Each brief action and each card must point to exactly one allowed in-app destination.",
         input: `Create a useful digest from these public platform signals. Return only the requested structured data.\n${JSON.stringify({ date: new Date().toISOString().slice(0, 10), communities: signals.communities, projects: signals.projects, events: signals.events })}`,
-        text: { format: { type: "json_schema", name: "community_digest", strict: true, schema: openAiSchema } },
-        max_output_tokens: 900,
+        text: { verbosity: "low", format: { type: "json_schema", name: "community_digest", strict: true, schema: openAiSchema } },
+        max_output_tokens: 1600,
       }),
     });
     if (!openAiResponse.ok) throw new Error(`OpenAI request failed with status ${openAiResponse.status}`);
     const result: unknown = await openAiResponse.json();
     const content = extractOutputText(result);
     const parsed: unknown = JSON.parse(content);
-    const data = parsed && typeof parsed === "object" ? parsed as { intro?: unknown; items?: unknown } : {};
+    const data = parsed && typeof parsed === "object" ? parsed as { intro?: unknown; brief?: unknown; items?: unknown } : {};
     const fallback = fallbackItems(signals);
-    return NextResponse.json(responseFor(signals, "openai", stringValue(data.intro, "", 180), safeItems(data.items, fallback)), { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json(responseFor(signals, "openai", stringValue(data.intro, "", 180), safeBrief(data.brief, fallbackBrief(signals)), safeItems(data.items, fallback)), { headers: { "Cache-Control": "no-store" } });
   } catch {
-    return NextResponse.json(responseFor(signals, "fallback", undefined, undefined, "Showing the latest platform snapshot while AI curation reconnects."), { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json(responseFor(signals, "fallback", undefined, undefined, undefined, "Showing the latest platform snapshot while AI curation reconnects."), { headers: { "Cache-Control": "no-store" } });
   }
 }
