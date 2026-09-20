@@ -1,6 +1,6 @@
 # BuildCircle
 
-> **One high-signal home for builders to discover communities, share work, join events, and know exactly what matters next.**
+> **The community platform for every community—one calm home for the conversations, people, projects, and events currently scattered across your apps.**
 
 [![Live demo](https://img.shields.io/badge/Live%20demo-Vercel-111111?logo=vercel)](https://buildcircle-puce.vercel.app/)
 [![Framework](https://img.shields.io/badge/Next.js-15-black?logo=next.js)](https://nextjs.org/)
@@ -12,8 +12,10 @@
 ## Contents
 
 - [Overview](#overview)
+- [The Story](#the-story)
 - [Problem Statement](#problem-statement)
 - [Solution](#solution)
+- [Why it stands out](#why-it-stands-out)
 - [Features](#features)
 - [Architecture](#architecture)
 - [Tech Stack](#tech-stack)
@@ -24,35 +26,57 @@
 
 ## Overview
 
-BuildCircle is a community operating system for people who build. Instead of scattering conversations across chat apps, events across ticketing tools, projects across feeds, and reminders across calendars, it gives builders one intentional place to learn, ship, find collaborators, and follow through.
+### The community for every community
 
-The experience is designed around a simple principle: **less noise, more momentum.** Its AI Daily Digest turns live community, project, and event signals into a three-step action plan so a member can immediately decide what to do next.
+Communities are where people learn, collaborate, and find momentum—but their attention is split between Discord servers, WhatsApp groups, Telegram channels, event pages, and calendars. BuildCircle is the answer to that fragmentation: **one intentional platform where people can discover, join, request access to, or create the communities that matter to them.**
+
+It is not another noisy feed. It is a shared home for many communities, with the context that usually gets lost between apps: conversations, projects, events, member connections, reminders, and the next best action.
+
+## The Story
+
+### A better Monday morning for a builder
+
+At 9:00 AM, a builder opens five apps just to catch up. A WhatsApp group has an event link buried under messages. A Discord channel has a question they could answer. A Telegram group announced a new project. Another community moved its meetup time. The important parts are everywhere; the builder's time and focus are nowhere.
+
+With BuildCircle, that same builder opens one place. Their circles are already there. The calendar shows the events they registered for. The Daily Digest says what changed since their last visit and offers three useful next actions. Instead of spending the morning hunting for updates, they can answer one question, save one event, give one piece of feedback—and get back to building.
 
 ## Problem Statement
 
-Builder communities have no shortage of activity—but useful activity is fragmented and easy to miss.
+### Community life is fragmented by default
 
-- Important questions disappear in fast-moving chat streams.
-- Promising projects and potential collaborators are difficult to surface at the right time.
-- Event registration, passes, reminders, and calendars live in separate tools.
-- Members spend time catching up instead of building.
+Today's communities are powerful, but the member experience is scattered:
+
+- A person may belong to a Discord server, several WhatsApp and Telegram groups, event pages, and private circles at the same time.
+- Important questions, introductions, project launches, and event changes disappear into separate streams.
+- Event registration, passes, reminder context, and planning are usually disconnected from the community conversation itself.
+- Catching up becomes a task; switching apps creates stress and takes time away from meaningful work.
+
+The real problem is not a lack of communities. It is the cost of staying present in all of them.
 
 ## Solution
 
-BuildCircle brings the core community loop into one polished workflow:
+### One platform. Every community. One clear next step.
 
-1. **Discover the right circle** — explore focused builder communities and request access to private ones.
-2. **Contribute where it matters** — discuss in channels, reply in threads, share files, images, voice notes, and projects.
-3. **Stay in motion** — register for events, keep a personal calendar, join a focus sprint, and use an AI brief to prioritize the next action.
+BuildCircle gives every community its own identity and workspace while giving every member one calm place to return to. A user can discover a public circle, request entry to a private one, or create a new community—then manage all of those spaces from the same platform.
+
+The experience follows a natural loop:
+
+1. **Find your people** — discover communities by interest, join instantly when public, or request approval when private.
+2. **Build in context** — use purposeful channels, threads, announcements, projects, direct messages, and rich sharing without losing the community's identity.
+3. **Show up at the right time** — register for events, keep registrations and saved events in one calendar, and see reminder status alongside the plan.
+4. **Return without the catch-up tax** — let the AI Daily Digest explain what changed and point to three useful next actions.
+
+BuildCircle turns community participation from a stressful app-hopping routine into a focused daily rhythm.
 
 ## Why it stands out
 
-| Traditional community experience | BuildCircle |
+| The scattered community world | The BuildCircle experience |
 | --- | --- |
-| Endless chronological chat | AI-assisted daily prioritization and actionable summaries |
-| Separate event, calendar, and pass tools | Registration, QR pass, event planning, and calendar in one product |
-| Generic group spaces | Purposeful communities with channels, announcements, member discovery, and admin controls |
-| Passive browsing | Community Pulse focus sprints, weekly quests, and BuildTokens encourage meaningful participation |
+| Discord, WhatsApp, Telegram, event tools, and calendars all compete for attention | One member home for joining, requesting access to, creating, and moving between communities |
+| Endless chronological streams make it hard to know what matters | An AI Daily Digest turns the last visit into one clear summary and three linked actions |
+| Event details are separated from the conversations around them | Registration, QR passes, calendar planning, and reminder status live beside community activity |
+| Communities feel interchangeable | Every circle has its own rooms, people, announcements, event context, and moderation controls |
+| Members react late or burn out trying to keep up | Community Pulse and focused workflows make meaningful participation feel achievable |
 
 ## Features
 
@@ -79,8 +103,8 @@ BuildCircle brings the core community loop into one polished workflow:
 ### Events, passes, and personal planning
 
 - Browse and filter events, register, and access a QR event pass.
-- Track registered and wishlisted events in a dedicated calendar.
-- Select a date to see the events planned for that day.
+- Track registered and wishlisted events in a dedicated calendar with visible reminder status.
+- Select a date to see the events planned for that day, rather than searching through old chats.
 - Use the Event Operations Agent to prepare reviewable community, email, and in-app messaging drafts.
 
 ### AI that turns activity into action
@@ -175,6 +199,8 @@ Human product decisions remain in control: AI receives only the platform context
 
 ### Recommended evaluation flow
 
+Follow the member story from scattered updates to a focused plan:
+
 1. Open **Today’s Digest** and review the AI-generated Quick Brief.
 2. Switch to **All updates** to see the detailed source cards.
 3. Visit **Communities** and open a circle to explore channels, read state, and Community Pulse.
@@ -218,6 +244,7 @@ npm install
 Create a `.env` file at the project root. **Never commit this file or expose its values.**
 
 ```bash
+
 # Supabase — server-side keys stay on the server
 SUPABASE_URL=your_supabase_url
 SUPABASE_PUBLISHABLE_KEY=your_supabase_publishable_key
@@ -249,13 +276,14 @@ BuildCircle is a working deployed prototype focused on demonstrating the full me
 
 - Supabase Auth and row-level security for persistent identity and moderator approvals.
 - Persistent chat, media storage, real-time presence, and delivery-grade notifications.
+- A scheduled notification service for reliable one-day-before event reminders across devices.
 - A verified transactional-email provider for releasing host-approved event communication.
 - Community analytics, moderation audit logs, and richer event check-in tooling.
 - Final submission screenshots and a short pitch video.
 
 ## Team note
 
-BuildCircle is designed to make the next useful builder action obvious—whether that is answering a question, giving feedback, joining an event, or simply making focused progress together.
+BuildCircle is built on a simple belief: communities should not force people to scatter their attention. The next useful action—answering a question, giving feedback, joining an event, or making focused progress—should be obvious in one place.
 
 ---
 
